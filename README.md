@@ -2,6 +2,11 @@
 
 一个温暖、轻松的匿名心理倾诉网站原型。当前已经包含首页、注册与登录、用户/管理员角色区分、匿名代号、用户会话页、管理员收件箱与双向回复流程。
 
+## 在线地址
+
+- 网站：[https://yunxinxiang.netlify.app](https://yunxinxiang.netlify.app)
+- GitHub：[makesisisi/cream-cloud-mailbox](https://github.com/makesisisi/cream-cloud-mailbox)
+
 ## 当前实现
 
 - 首页采用“奶油云朵信箱”视觉方向，桌面与移动端均可使用。
