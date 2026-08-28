@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpenText,
@@ -6,10 +6,13 @@ import {
   ChatsCircle,
   CheckCircle,
   Cloud,
+  Eye,
+  EyeSlash,
   Heart,
   House,
   Leaf,
   LockKey,
+  List,
   PaperPlaneTilt,
   PlusCircle,
   ShieldCheck,
@@ -28,6 +31,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
   useParams,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.jsx";
@@ -38,6 +42,13 @@ import {
   sendMessage,
   useConversations,
 } from "./data/chatStore.js";
+import {
+  formatConversationDate,
+  formatListTime,
+  formatTime,
+  getGreeting,
+  groupMessagesByDate,
+} from "./utils/presentation.js";
 
 const tips = [
   {
@@ -93,8 +104,8 @@ function SiteHeader() {
       <nav className="main-nav" aria-label="主导航">
         <Link to="/">首页</Link>
         <Link to="/tips">心理小贴士</Link>
-        <a href="/#listening">倾听方式</a>
-        <a href="/#about">关于我们</a>
+        <Link to="/about#how">倾听方式</Link>
+        <Link to="/about">关于我们</Link>
       </nav>
       <div className="header-actions">
         {session ? (
@@ -110,6 +121,15 @@ function SiteHeader() {
         ) : (
           <Link className="soft-link" to="/login"><SignIn size={20} /> 登录</Link>
         )}
+        <details className="mobile-menu">
+          <summary aria-label="打开网站导航"><List size={22} /></summary>
+          <nav aria-label="移动端导航">
+            <Link to="/">首页</Link>
+            <Link to="/tips">心理小贴士</Link>
+            <Link to="/about#how">倾听方式</Link>
+            <Link to="/about">关于我们</Link>
+          </nav>
+        </details>
       </div>
     </header>
   );
@@ -156,7 +176,7 @@ function HomePage() {
           <div className="trust-item"><LockKey size={28} weight="duotone" /><div><strong>隐私优先</strong><span>不会公开聊天内容</span></div></div>
         </section>
 
-        <section className="tips-section" id="about" aria-labelledby="tips-title">
+        <section className="tips-section" id="home-tips" aria-labelledby="tips-title">
           <div className="section-heading">
             <span className="eyebrow"><Leaf size={17} /> 今天也照顾一下自己</span>
             <h2 id="tips-title">三条轻轻的小提醒</h2>
@@ -211,14 +231,86 @@ function TipsPage() {
   );
 }
 
+function AboutPage() {
+  return (
+    <div className="page">
+      <SiteHeader />
+      <main className="content-page about-page">
+        <div className="section-heading centered">
+          <span className="eyebrow"><Heart size={18} weight="fill" /> 关于奶油云朵信箱</span>
+          <h1>让表达更容易，让倾听更认真</h1>
+          <p>这里提供的是匿名表达与非评判式陪伴，不做心理诊断，也不替代医疗或心理咨询服务。</p>
+        </div>
+
+        <section className="about-grid" id="how" aria-labelledby="how-title">
+          <div className="about-copy">
+            <span className="eyebrow"><ChatsCircle size={18} /> 倾听方式</span>
+            <h2 id="how-title">一段会话，会这样进行</h2>
+            <p>注册后系统会为会话生成匿名代号。你可以先选择想聊的主题，再用自己的节奏写下感受；倾听员会先接住情绪，再通过问题陪你慢慢梳理。</p>
+          </div>
+          <ol className="process-list">
+            <li><strong>创建会话</strong><span>只需选择大致主题和当下需要，不要求完整讲述。</span></li>
+            <li><strong>匿名交流</strong><span>倾听员看到的是随机代号，不会看到你的注册邮箱。</span></li>
+            <li><strong>随时暂停</strong><span>你可以晚一点回复，也可以主动结束会话并保留历史记录。</span></li>
+          </ol>
+        </section>
+
+        <section className="privacy-section" id="privacy" aria-labelledby="privacy-title">
+          <span className="eyebrow"><LockKey size={18} /> 隐私与安全</span>
+          <h2 id="privacy-title">我们如何保护这段对话</h2>
+          <div className="privacy-grid">
+            <article><ShieldCheck size={28} weight="duotone" /><h3>权限隔离</h3><p>普通用户只能读取自己的会话，管理员只能通过受保护的工作台回复。</p></article>
+            <article><UserCircle size={28} weight="duotone" /><h3>最少展示</h3><p>对话界面不展示邮箱、真实姓名或登录方式；也请不要主动发送可识别信息。</p></article>
+            <article><WarningCircle size={28} weight="duotone" /><h3>服务边界</h3><p>本站不是紧急救援渠道。若存在即时危险，请拨打 110、120 或心理援助热线 12356。</p></article>
+          </div>
+        </section>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, autoComplete = "current-password", placeholder = "至少 8 位" }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label>{label}
+      <span className="password-input">
+        <input
+          type={visible ? "text" : "password"}
+          minLength={8}
+          required
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+        />
+        <button type="button" onClick={() => setVisible((current) => !current)} aria-label={visible ? "隐藏密码" : "显示密码"}>
+          {visible ? <EyeSlash size={20} /> : <Eye size={20} />}
+        </button>
+      </span>
+    </label>
+  );
+}
+
 function AuthPage({ mode }) {
   const isRegister = mode === "register";
-  const { login, register, authMode } = useAuth();
+  const { login, register, authMode, session } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ email: "", password: "", displayName: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const returnTo = typeof location.state?.from === "string" && location.state.from.startsWith("/")
+    ? location.state.from
+    : null;
+
+  function destinationFor(nextSession) {
+    const fallback = nextSession.role === "admin" ? "/admin" : "/app";
+    if (!returnTo) return fallback;
+    if (nextSession.role === "admin" || !returnTo.startsWith("/admin")) return returnTo;
+    return fallback;
+  }
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -232,11 +324,11 @@ function AuthPage({ mode }) {
     try {
       if (isRegister) {
         const result = await register(form);
-        if (result.needsConfirmation) setMessage("这个邮箱可能已经注册。请切换到登录页并使用原密码；如果忘记密码，请联系管理员处理找回。");
-        else navigate("/app");
+        if (result.needsConfirmation) setMessage("这个邮箱可能已经注册。请切换到登录页使用原密码，或通过“忘记密码”重新设置。");
+        else navigate(destinationFor(result.session), { replace: true });
       } else {
         const session = await login(form.email, form.password);
-        navigate(session.role === "admin" ? "/admin" : "/app");
+        navigate(destinationFor(session), { replace: true });
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "暂时无法完成，请稍后再试。");
@@ -248,6 +340,8 @@ function AuthPage({ mode }) {
   function useDemo(account) {
     setForm((current) => ({ ...current, email: account.email, password: account.password }));
   }
+
+  if (session) return <Navigate to={destinationFor(session)} replace />;
 
   return (
     <div className="page auth-page">
@@ -266,22 +360,21 @@ function AuthPage({ mode }) {
         <section className="auth-card" aria-labelledby="auth-title">
           <div className="auth-card-heading">
             <span className="auth-icon">{isRegister ? <PlusCircle size={26} /> : <SignIn size={26} />}</span>
-            <div><h2 id="auth-title">{isRegister ? "注册账号" : "登录账号"}</h2><p>{isRegister ? "只需要一个邮箱和密码" : "继续之前的匿名会话"}</p></div>
+            <div><h2 id="auth-title">{isRegister ? "注册账号" : "登录账号"}</h2><p>{isRegister ? "邮箱、密码，再加一个可选称呼" : "继续之前的匿名会话"}</p></div>
           </div>
           <form onSubmit={submit}>
             {isRegister && (
-              <label>称呼（仅用于登录后的问候）
-                <input required value={form.displayName} onChange={(event) => update("displayName", event.target.value)} placeholder="例如：小云" />
+              <label>称呼（选填，仅用于登录后的问候）
+                <input value={form.displayName} onChange={(event) => update("displayName", event.target.value)} placeholder="例如：小云" autoComplete="nickname" />
               </label>
             )}
             <label>邮箱
               <input type="email" required value={form.email} onChange={(event) => update("email", event.target.value)} placeholder="name@example.com" autoComplete="email" />
             </label>
-            <label>密码
-              <input type="password" minLength={8} required value={form.password} onChange={(event) => update("password", event.target.value)} placeholder="至少 8 位" autoComplete={isRegister ? "new-password" : "current-password"} />
-            </label>
+            <PasswordField label="密码" value={form.password} onChange={(event) => update("password", event.target.value)} autoComplete={isRegister ? "new-password" : "current-password"} />
+            {!isRegister && <div className="auth-help-row"><Link to="/forgot-password">忘记密码？</Link></div>}
             {error && <div className="form-message error"><WarningCircle size={18} /> {error}</div>}
-            {message && <div className="form-message success"><CheckCircle size={18} /> {message}</div>}
+            {message && <div className="form-message info" role="status"><WarningCircle size={18} /> {message}</div>}
             <button className="button button-primary button-block" disabled={busy} type="submit">
               {busy ? "请稍等…" : isRegister ? "创建匿名账号" : "登录并继续"}
             </button>
@@ -303,6 +396,118 @@ function AuthPage({ mode }) {
             {isRegister ? "已经有账号？" : "还没有账号？"}
             <Link to={isRegister ? "/login" : "/register"}>{isRegister ? "去登录" : "先注册"}</Link>
           </p>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function PasswordRecoveryRequestPage() {
+  const { requestPasswordRecovery, authMode, session } = useAuth();
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await requestPasswordRecovery(email);
+      setSent(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "暂时无法发送找回邮件，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (session) return <Navigate to={session.role === "admin" ? "/admin" : "/app"} replace />;
+
+  return (
+    <div className="page auth-page">
+      <SiteHeader />
+      <main className="auth-layout auth-layout-compact">
+        <section className="auth-intro">
+          <span className="eyebrow"><LockKey size={18} /> 找回你的信箱</span>
+          <h1>忘记密码没关系，<br />我们从邮箱重新开始。</h1>
+          <p>输入注册邮箱后，我们会发送重置链接。为了保护账号，无论邮箱是否存在，页面都会显示相同结果。</p>
+        </section>
+        <section className="auth-card" aria-labelledby="recovery-title">
+          <div className="auth-card-heading">
+            <span className="auth-icon"><LockKey size={26} /></span>
+            <div><h2 id="recovery-title">找回密码</h2><p>重置链接会发送到注册邮箱</p></div>
+          </div>
+          {sent ? (
+            <div className="recovery-result" role="status">
+              <CheckCircle size={34} weight="duotone" />
+              <h3>请检查你的邮箱</h3>
+              <p>{authMode === "demo" ? "本地演示不会真实发送邮件；线上环境会发送重置链接。" : "如果这个邮箱已注册，几分钟内会收到密码重置链接。也请检查垃圾邮件文件夹。"}</p>
+              <Link className="button button-secondary" to="/login">返回登录</Link>
+            </div>
+          ) : (
+            <form onSubmit={submit}>
+              <label>注册邮箱
+                <input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" autoComplete="email" />
+              </label>
+              {error && <div className="form-message error"><WarningCircle size={18} /> {error}</div>}
+              <button className="button button-primary button-block" disabled={busy} type="submit">{busy ? "正在发送…" : "发送重置链接"}</button>
+              <Link className="auth-back-link" to="/login">返回登录</Link>
+            </form>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function PasswordResetPage() {
+  const { completePasswordRecovery, clearAuthCallback } = useAuth();
+  const navigate = useNavigate();
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    if (password !== confirmation) {
+      setError("两次输入的密码不一致，请重新确认。");
+      return;
+    }
+    setBusy(true);
+    try {
+      const session = await completePasswordRecovery(password);
+      navigate(session.role === "admin" ? "/admin" : "/app", { replace: true });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "密码暂时无法更新，请重新打开邮件中的链接。");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="page auth-page">
+      <SiteHeader />
+      <main className="auth-layout auth-layout-compact">
+        <section className="auth-intro">
+          <span className="eyebrow"><ShieldCheck size={18} /> 安全重置密码</span>
+          <h1>设置一个新的，<br />只有你知道的密码。</h1>
+          <p>建议至少 8 位，并避免与其他网站重复。更新完成后会直接回到你的信箱。</p>
+        </section>
+        <section className="auth-card" aria-labelledby="reset-title">
+          <div className="auth-card-heading">
+            <span className="auth-icon"><LockKey size={26} /></span>
+            <div><h2 id="reset-title">设置新密码</h2><p>重置链接已验证</p></div>
+          </div>
+          <form onSubmit={submit}>
+            <PasswordField label="新密码" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+            <PasswordField label="再次输入新密码" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" placeholder="再次输入相同密码" />
+            {error && <div className="form-message error"><WarningCircle size={18} /> {error}</div>}
+            <button className="button button-primary button-block" disabled={busy} type="submit">{busy ? "正在更新…" : "更新密码并进入信箱"}</button>
+            <button className="auth-back-link button-link" type="button" onClick={() => { clearAuthCallback(); navigate("/login", { replace: true }); }}>取消并返回登录</button>
+          </form>
         </section>
       </main>
     </div>
@@ -355,12 +560,8 @@ function InviteAcceptPage({ token }) {
             <div><h2 id="invite-title">接受管理员邀请</h2><p>设置密码后即可登录</p></div>
           </div>
           <form onSubmit={submit}>
-            <label>设置密码
-              <input type="password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" />
-            </label>
-            <label>再次输入密码
-              <input type="password" minLength={8} required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="再次输入相同密码" autoComplete="new-password" />
-            </label>
+            <PasswordField label="设置密码" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+            <PasswordField label="再次输入密码" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" placeholder="再次输入相同密码" />
             {error && <div className="form-message error"><WarningCircle size={18} /> {error}</div>}
             <button className="button button-primary button-block" disabled={busy} type="submit">
               {busy ? "正在启用账号…" : "设置密码并进入工作台"}
@@ -379,8 +580,11 @@ function AuthCallbackErrorPage({ message, onDismiss }) {
       <main className="content-page">
         <section className="auth-card">
           <div className="form-message error"><WarningCircle size={20} /> {message}</div>
-          <p>请重新打开最新一封 Netlify 邀请邮件中的链接；如果链接已经过期，可以让管理员重新发送邀请。</p>
-          <button className="button button-secondary" type="button" onClick={onDismiss}>返回首页</button>
+          <p>这个身份验证链接可能已经过期或使用过。请返回登录；如果是在找回密码，可以重新发送一封重置邮件。</p>
+          <div className="callback-actions">
+            <button className="button button-secondary" type="button" onClick={onDismiss}>返回首页</button>
+            <Link className="button button-primary" to="/forgot-password" onClick={onDismiss}>重新找回密码</Link>
+          </div>
         </section>
       </main>
     </div>
@@ -389,8 +593,9 @@ function AuthCallbackErrorPage({ message, onDismiss }) {
 
 function ProtectedRoute({ role, children }) {
   const { session, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在打开信箱…</div>;
-  if (!session) return <Navigate to="/login" replace />;
+  if (!session) return <Navigate to="/login" state={{ from: `${location.pathname}${location.search}${location.hash}` }} replace />;
   if (role && session.role !== role) return <Navigate to={session.role === "admin" ? "/admin" : "/app"} replace />;
   return children;
 }
@@ -415,10 +620,11 @@ function UserDashboard() {
   const { session } = useAuth();
   const { conversations, loading, error } = useConversations();
   const navigate = useNavigate();
-  const mine = conversations.filter(
-    (conversation) => !conversation.clientId || conversation.clientId === session.id,
-  );
+  const mine = conversations
+    .filter((conversation) => !conversation.clientId || conversation.clientId === session.id)
+    .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
   const active = mine.find((conversation) => conversation.status !== "closed");
+  const history = mine.filter((conversation) => conversation.status === "closed");
   const [topic, setTopic] = useState("最近有点累");
   const [need, setNeed] = useState("希望有人先听我说说");
   const [busy, setBusy] = useState(false);
@@ -443,7 +649,7 @@ function UserDashboard() {
       <main className="dashboard-layout">
         <section className="welcome-panel">
           <div>
-            <span className="eyebrow"><Heart size={17} weight="fill" /> 晚上好，{session.displayName}</span>
+            <span className="eyebrow"><Heart size={17} weight="fill" /> {getGreeting()}，{session.displayName}</span>
             <h1>今天想从哪里说起？</h1>
             <p>{active ? <>你在本次会话中的匿名代号是 <strong>{active.alias}</strong>。倾听员只会看到这个代号。</> : "创建会话后，系统会为这次倾诉生成一个随机匿名代号。"}</p>
           </div>
@@ -484,6 +690,24 @@ function UserDashboard() {
           <blockquote>“你不需要一次想明白所有事，先允许自己停一停。”</blockquote>
           <Link to="/tips">再读一条小贴士 <ArrowRight size={16} /></Link>
         </aside>
+
+        {history.length > 0 && (
+          <section className="history-panel" aria-labelledby="history-title">
+            <div className="history-heading">
+              <div><span className="eyebrow"><BookOpenText size={17} /> 历史倾诉</span><h2 id="history-title">已经结束的会话</h2></div>
+              <span>{history.length} 段记录</span>
+            </div>
+            <div className="history-list">
+              {history.map((conversation) => (
+                <Link key={conversation.id} to={`/chat/${conversation.id}`}>
+                  <span className="list-avatar"><Cloud size={22} weight="duotone" /></span>
+                  <span><strong>{conversation.topic}</strong><small>{conversation.alias} · {formatConversationDate(conversation.updatedAt)}</small></span>
+                  <ArrowRight size={18} />
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );
@@ -497,7 +721,13 @@ function ChatPage() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const messageEndRef = useRef(null);
   const conversation = conversations.find((item) => item.id === id);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [conversation?.messages.length]);
 
   if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在读取对话…</div>;
   if (error && !conversation) {
@@ -526,10 +756,18 @@ function ChatPage() {
     setActionError("");
     try {
       await closeConversation(conversation.id);
+      setConfirmingClose(false);
       navigate(session.role === "admin" ? "/admin" : "/app");
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "暂时无法结束会话。");
       setBusy(false);
+    }
+  }
+
+  function handleComposerKeyDown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && draft.trim() && !busy) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
   }
 
@@ -543,30 +781,56 @@ function ChatPage() {
           <h2>{conversation.alias}</h2>
           <p>{session.role === "admin" ? "对方的注册邮箱和真实姓名不会显示在这里。" : "这是倾听员在本次对话中看到的唯一身份代号。"}</p>
           <dl><div><dt>倾诉主题</dt><dd>{conversation.topic}</dd></div><div><dt>希望得到</dt><dd>{conversation.need}</dd></div></dl>
-          <button className="quiet-danger" type="button" disabled={busy} onClick={handleClose}><XCircle size={18} /> 结束本次会话</button>
+          {conversation.status === "closed" ? (
+            <span className="closed-status"><CheckCircle size={18} /> 这段会话已结束</span>
+          ) : (
+            <button className="quiet-danger" type="button" disabled={busy} onClick={() => setConfirmingClose(true)}><XCircle size={18} /> 结束本次会话</button>
+          )}
         </aside>
         <section className="messenger" aria-label="匿名对话消息">
           <div className="message-list">
-            <div className="chat-day">今天</div>
-            {conversation.messages.map((message) => (
-              <div className={`message-row message-${message.sender}`} key={message.id}>
-                <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "倾听员" : conversation.alias}</span>
-                <div className="message-bubble">{message.body}</div>
-                <time>{formatTime(message.createdAt)}</time>
+            {groupMessagesByDate(conversation.messages).map((group) => (
+              <div className="message-day-group" key={group.key}>
+                <div className="chat-day">{formatConversationDate(group.date)}</div>
+                {group.messages.map((message) => (
+                  <div className={`message-row message-${message.sender}`} key={message.id}>
+                    <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "倾听员" : conversation.alias}</span>
+                    <div className="message-bubble">{message.body}</div>
+                    <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+                  </div>
+                ))}
               </div>
             ))}
+            <span ref={messageEndRef} />
           </div>
-          <form className="composer" onSubmit={submit}>
-            <label htmlFor="message-input">把想说的话放在这里</label>
-            <div>
-              <textarea id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="不需要组织得很完整，慢慢说就好…" rows="3" disabled={conversation.status === "closed"} />
-              <button className="send-button" type="submit" disabled={busy || !draft.trim() || conversation.status === "closed"} aria-label="发送消息"><PaperPlaneTilt size={22} weight="fill" /></button>
-            </div>
-            <span><LockKey size={15} /> 请避免发送姓名、地址、身份证号等可识别信息</span>
-            {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
-          </form>
+          {conversation.status === "closed" ? (
+            <div className="conversation-closed-note"><CheckCircle size={22} weight="duotone" /><div><strong>这段会话已经结束</strong><span>你仍然可以查看完整记录，需要时可回到工作台创建新的倾诉。</span></div></div>
+          ) : (
+            <form className="composer" onSubmit={submit}>
+              <label htmlFor="message-input">{session.role === "admin" ? "写下温柔回应" : "把想说的话放在这里"}</label>
+              <div>
+                <textarea id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={session.role === "admin" ? "先接住感受，再慢慢回应…" : "不需要组织得很完整，慢慢说就好…"} rows="3" />
+                <button className="send-button" type="submit" disabled={busy || !draft.trim()} aria-label={busy ? "正在发送消息" : "发送消息"}><PaperPlaneTilt size={22} weight="fill" /></button>
+              </div>
+              <span><LockKey size={15} /> 请避免发送姓名、地址、身份证号等可识别信息 · Ctrl / ⌘ + Enter 发送</span>
+              {actionError && <div className="form-message error" role="alert"><WarningCircle size={18} /> {actionError}</div>}
+            </form>
+          )}
         </section>
       </main>
+      {confirmingClose && (
+        <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setConfirmingClose(false)}>
+          <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="close-dialog-title" aria-describedby="close-dialog-description">
+            <span className="dialog-icon"><XCircle size={28} /></span>
+            <h2 id="close-dialog-title">要结束这段会话吗？</h2>
+            <p id="close-dialog-description">结束后将保留聊天记录，但不能继续发送消息。需要时可以重新创建一段倾诉。</p>
+            <div>
+              <button className="button button-secondary" type="button" onClick={() => setConfirmingClose(false)} autoFocus>继续聊一会</button>
+              <button className="button button-danger" type="button" disabled={busy} onClick={handleClose}>{busy ? "正在结束…" : "确认结束"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,11 +838,27 @@ function ChatPage() {
 function AdminDashboard() {
   const { conversations, loading, error } = useConversations();
   const [selectedId, setSelectedId] = useState(() => conversations[0]?.id ?? null);
+  const [filter, setFilter] = useState("all");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const selected = conversations.find((conversation) => conversation.id === selectedId) ?? conversations[0];
+  const adminMessageEndRef = useRef(null);
+  const filteredConversations = conversations.filter((conversation) => {
+    if (filter === "waiting") return conversation.status === "waiting";
+    if (filter === "closed") return conversation.status === "closed";
+    return true;
+  });
+  const selected = filteredConversations.find((conversation) => conversation.id === selectedId) ?? filteredConversations[0];
   const waitingCount = conversations.filter((conversation) => conversation.status === "waiting").length;
+  const closedCount = conversations.filter((conversation) => conversation.status === "closed").length;
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+  }, [selected, selectedId]);
+
+  useEffect(() => {
+    adminMessageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [selected?.id, selected?.messages.length]);
 
   async function reply(event) {
     event.preventDefault();
@@ -595,26 +875,38 @@ function AdminDashboard() {
     }
   }
 
+  function handleReplyKeyDown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && draft.trim() && !busy) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
   return (
     <div className="app-shell admin-shell">
       <AppHeader title="倾听员工作台" subtitle="所有来访者仅显示匿名代号" />
       <main className="admin-layout">
         <aside className="conversation-list">
           <div className="list-heading"><div><span className="eyebrow"><UsersThree size={17} /> 会话收件箱</span><h1>等待被听见</h1></div><span className="count-badge">{waitingCount} 待回复</span></div>
-          <div className="conversation-tabs"><button className="active" type="button">全部</button><button type="button">待回复</button><button type="button">已结束</button></div>
+          <div className="conversation-tabs" aria-label="筛选会话">
+            <button className={filter === "all" ? "active" : ""} type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>全部 <span>{conversations.length}</span></button>
+            <button className={filter === "waiting" ? "active" : ""} type="button" aria-pressed={filter === "waiting"} onClick={() => setFilter("waiting")}>待回复 <span>{waitingCount}</span></button>
+            <button className={filter === "closed" ? "active" : ""} type="button" aria-pressed={filter === "closed"} onClick={() => setFilter("closed")}>已结束 <span>{closedCount}</span></button>
+          </div>
           <div className="conversation-rows">
-            {conversations.map((conversation) => {
+            {filteredConversations.map((conversation) => {
               const lastMessage = conversation.messages.at(-1);
               return (
                 <button className={conversation.id === selected?.id ? "selected" : ""} type="button" key={conversation.id} onClick={() => setSelectedId(conversation.id)}>
                   <span className="list-avatar"><Cloud size={24} weight="duotone" /></span>
                   <span className="row-copy"><strong>{conversation.alias}</strong><small>{lastMessage?.body}</small></span>
-                  <span className="row-meta"><time>{formatTime(conversation.updatedAt)}</time><i className={`status-dot status-${conversation.status}`} /></span>
+                  <span className="row-meta"><time dateTime={conversation.updatedAt}>{formatListTime(conversation.updatedAt)}</time><i className={`status-dot status-${conversation.status}`} /></span>
                 </button>
               );
             })}
             {loading && !conversations.length && <div className="empty-state"><Cloud size={34} weight="duotone" /><p>正在读取会话…</p></div>}
-            {!loading && !conversations.length && <div className="empty-state"><ChatsCircle size={34} /><p>暂时没有新会话</p></div>}
+            {!loading && !filteredConversations.length && <div className="empty-state"><ChatsCircle size={34} /><p>{filter === "waiting" ? "目前没有待回复会话" : filter === "closed" ? "目前没有已结束会话" : "暂时没有新会话"}</p><small>切换上方筛选可查看其他会话</small></div>}
+            {error && <div className="list-error"><WarningCircle size={17} /> {error}</div>}
           </div>
         </aside>
         <section className="admin-conversation">
@@ -622,19 +914,29 @@ function AdminDashboard() {
             <>
               <header><div><span className="avatar-cloud small"><Cloud size={28} weight="duotone" /></span><div><h2>{selected.alias}</h2><p>{selected.topic} · {statusLabels[selected.status]}</p></div></div><Link className="button button-secondary compact-button" to={`/chat/${selected.id}`}>打开完整会话</Link></header>
               <div className="admin-messages">
-                {selected.messages.map((message) => (
-                  <div className={`message-row message-${message.sender}`} key={message.id}>
-                    <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "我" : selected.alias}</span>
-                    <div className="message-bubble">{message.body}</div>
-                    <time>{formatTime(message.createdAt)}</time>
+                {groupMessagesByDate(selected.messages).map((group) => (
+                  <div className="message-day-group" key={group.key}>
+                    <div className="chat-day">{formatConversationDate(group.date)}</div>
+                    {group.messages.map((message) => (
+                      <div className={`message-row message-${message.sender}`} key={message.id}>
+                        <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "我" : selected.alias}</span>
+                        <div className="message-bubble">{message.body}</div>
+                        <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+                      </div>
+                    ))}
                   </div>
                 ))}
+                <span ref={adminMessageEndRef} />
               </div>
-              <form className="admin-composer" onSubmit={reply}>
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows="3" placeholder="先接住情绪，再慢慢回应…" disabled={selected.status === "closed"} />
-                {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
-                <div><span><ShieldCheck size={17} /> 回复前确认：不诊断、不评判、不承诺即时救援</span><button className="button button-primary" disabled={busy || !draft.trim() || selected.status === "closed"} type="submit">发送回复 <PaperPlaneTilt size={18} weight="fill" /></button></div>
-              </form>
+              {selected.status === "closed" ? (
+                <div className="conversation-closed-note compact"><CheckCircle size={22} weight="duotone" /><div><strong>这段会话已结束</strong><span>记录保留为只读，不能继续回复。</span></div></div>
+              ) : (
+                <form className="admin-composer" onSubmit={reply}>
+                  <textarea aria-label="回复内容" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleReplyKeyDown} rows="3" placeholder="先接住情绪，再慢慢回应…" />
+                  {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
+                  <div><span><ShieldCheck size={17} /> 不诊断、不评判 · Ctrl / ⌘ + Enter 发送</span><button className="button button-primary" disabled={busy || !draft.trim()} type="submit">{busy ? "发送中…" : "发送回复"} <PaperPlaneTilt size={18} weight="fill" /></button></div>
+                </form>
+              )}
             </>
           ) : <div className="empty-state large">{error ? <><WarningCircle size={48} /><h2>{error}</h2></> : <><ChatsCircle size={48} /><h2>选择一段会话开始倾听</h2></>}</div>}
         </section>
@@ -657,13 +959,37 @@ function Footer() {
     <footer className="site-footer">
       <Brand compact />
       <p>一个用于匿名表达与温柔倾听的空间 · 对话内容由登录与权限规则保护</p>
-      <div><Link to="/tips">心理小贴士</Link><a href="https://github.com/makesisisi/cream-cloud-mailbox/issues" target="_blank" rel="noreferrer">问题反馈</a></div>
+      <div><Link to="/tips">心理小贴士</Link><Link to="/about#privacy">隐私与安全</Link><a href="https://github.com/makesisisi/cream-cloud-mailbox/issues" target="_blank" rel="noreferrer">问题反馈</a></div>
     </footer>
   );
 }
 
-function formatTime(value) {
-  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+function NotFoundPage() {
+  return (
+    <div className="page">
+      <SiteHeader />
+      <main className="not-found-page">
+        <Cloud size={56} weight="duotone" />
+        <span className="eyebrow">这朵云暂时飘走了</span>
+        <h1>没有找到这个页面</h1>
+        <p>链接可能已经失效，也可能输入有误。你可以回到首页重新开始。</p>
+        <Link className="button button-primary" to="/">返回首页</Link>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function HashScroll() {
+  const { hash, pathname } = useLocation();
+  useEffect(() => {
+    if (!hash) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+    window.requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }));
+  }, [hash, pathname]);
+  return null;
 }
 
 function AppRoutes() {
@@ -672,19 +998,25 @@ function AppRoutes() {
   if (authCallback?.type === "invite" && authCallback.token) {
     return <InviteAcceptPage token={authCallback.token} />;
   }
+  if (authCallback?.type === "recovery") return <PasswordResetPage />;
   if (authError) return <AuthCallbackErrorPage message={authError} onDismiss={clearAuthError} />;
 
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/tips" element={<TipsPage />} />
-      <Route path="/login" element={<AuthPage mode="login" />} />
-      <Route path="/register" element={<AuthPage mode="register" />} />
-      <Route path="/app" element={<ProtectedRoute role="client"><UserDashboard /></ProtectedRoute>} />
-      <Route path="/chat/:id" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <HashScroll />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/tips" element={<TipsPage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/login" element={<AuthPage mode="login" />} />
+        <Route path="/register" element={<AuthPage mode="register" />} />
+        <Route path="/forgot-password" element={<PasswordRecoveryRequestPage />} />
+        <Route path="/app" element={<ProtectedRoute role="client"><UserDashboard /></ProtectedRoute>} />
+        <Route path="/chat/:id" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </>
   );
 }
 

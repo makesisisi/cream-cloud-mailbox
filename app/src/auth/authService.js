@@ -4,7 +4,9 @@ import {
   handleAuthCallback,
   login as netlifyLogin,
   logout as netlifyLogout,
+  requestPasswordRecovery as netlifyRequestPasswordRecovery,
   signup as netlifySignup,
+  updateUser as netlifyUpdateUser,
 } from "@netlify/identity";
 import { isConfirmedIdentityUser } from "./identityState.js";
 
@@ -82,6 +84,9 @@ export async function hydrateSession() {
   if (authMode === "netlify") {
     const callback = await handleAuthCallback();
     if (callback?.type === "invite") return { session: null, callback };
+    if (callback?.type === "recovery") {
+      return { session: callback.user ? toNetlifySession(callback.user) : null, callback };
+    }
     const user = callback?.user ?? await getNetlifyUser();
     return { session: user ? toNetlifySession(user) : null, callback: null };
   }
@@ -150,6 +155,20 @@ export async function registerWithEmail({ email, password, displayName }) {
   const session = safeSession(user);
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return { session, needsConfirmation: false };
+}
+
+export async function requestPasswordRecoveryEmail(email) {
+  if (authMode === "netlify") {
+    await netlifyRequestPasswordRecovery(email.trim().toLowerCase());
+    return;
+  }
+  await new Promise((resolve) => window.setTimeout(resolve, 350));
+}
+
+export async function updateCurrentPassword(password) {
+  if (authMode !== "netlify") throw new Error("本地演示模式不会修改真实密码。");
+  const user = await netlifyUpdateUser({ password });
+  return toNetlifySession(user);
 }
 
 export async function logoutSession() {

@@ -5,6 +5,7 @@ app/.env
 app/.env.local
 app/.netlify/
 .netlify/
+.artifacts/
 app/implementation-*.jpg
 app/implementation-*.png
 app/design-qa-comparison-*.jpg

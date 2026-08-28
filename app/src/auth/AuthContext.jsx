@@ -6,6 +6,8 @@ import {
   loginWithEmail,
   logoutSession,
   registerWithEmail,
+  requestPasswordRecoveryEmail,
+  updateCurrentPassword,
 } from "./authService.js";
 
 const AuthContext = createContext(null);
@@ -43,6 +45,9 @@ export function AuthProvider({ children }) {
       clearAuthError() {
         setAuthError("");
       },
+      clearAuthCallback() {
+        setAuthCallback(null);
+      },
       async completeInvite(token, password) {
         const next = await acceptInviteWithPassword(token, password);
         setSession(next);
@@ -58,6 +63,15 @@ export function AuthProvider({ children }) {
         const result = await registerWithEmail(payload);
         if (result.session) setSession(result.session);
         return result;
+      },
+      async requestPasswordRecovery(email) {
+        await requestPasswordRecoveryEmail(email);
+      },
+      async completePasswordRecovery(password) {
+        const next = await updateCurrentPassword(password);
+        setSession(next);
+        setAuthCallback(null);
+        return next;
       },
       async logout() {
         await logoutSession();
