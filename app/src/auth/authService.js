@@ -118,6 +118,15 @@ export async function registerWithEmail({ email, password, displayName }) {
       full_name: displayName || "匿名来访者",
     });
     const confirmed = isConfirmedIdentityUser(user);
+    if (!confirmed) {
+      try {
+        const existingUser = await netlifyLogin(email, password);
+        return { session: toNetlifySession(existingUser), needsConfirmation: false };
+      } catch {
+        // Identity intentionally returns an ambiguous signup response for an existing
+        // address. If the supplied password does not log in, guide the visitor to login.
+      }
+    }
     return {
       session: confirmed ? toNetlifySession(user) : null,
       needsConfirmation: !confirmed,

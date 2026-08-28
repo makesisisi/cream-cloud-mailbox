@@ -232,7 +232,7 @@ function AuthPage({ mode }) {
     try {
       if (isRegister) {
         const result = await register(form);
-        if (result.needsConfirmation) setMessage("该邮箱对应的账号仍处于待确认状态。免确认设置只对之后新创建的账号生效；请完成原确认邮件，或换一个从未注册过的邮箱。");
+        if (result.needsConfirmation) setMessage("这个邮箱可能已经注册。请切换到登录页并使用原密码；如果忘记密码，请联系管理员处理找回。");
         else navigate("/app");
       } else {
         const session = await login(form.email, form.password);
