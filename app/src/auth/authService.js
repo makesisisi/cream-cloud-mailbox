@@ -71,7 +71,7 @@ function toNetlifySession(user) {
     email: user.email,
     displayName: user.userMetadata?.full_name ?? user.user_metadata?.full_name ?? "匿名来访者",
     role: roles.includes("admin") ? "admin" : "client",
-    alias: user.userMetadata?.anonymous_alias ?? user.user_metadata?.anonymous_alias ?? `云朵-${String(user.id).slice(-3).toUpperCase()}`,
+    alias: "匿名来访者",
     provider: "netlify",
   };
 }
@@ -105,10 +105,8 @@ export async function loginWithEmail(email, password) {
 
 export async function registerWithEmail({ email, password, displayName }) {
   if (authMode === "netlify") {
-    const alias = `云朵-${Math.floor(100 + Math.random() * 900)}`;
     const user = await netlifySignup(email, password, {
       full_name: displayName || "匿名来访者",
-      anonymous_alias: alias,
     });
     return {
       session: user.emailVerified ? toNetlifySession(user) : null,

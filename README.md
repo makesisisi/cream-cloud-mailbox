@@ -1,6 +1,6 @@
 # 奶油云朵信箱
 
-一个温暖、轻松的匿名心理倾诉网站原型。当前已经包含首页、注册与登录、用户/管理员角色区分、匿名代号、用户会话页、管理员收件箱与双向回复流程。
+一个温暖、轻松的匿名心理倾诉网站。当前已经包含首页、注册与登录、用户/管理员角色区分、匿名代号、用户会话页、管理员收件箱，以及由 Netlify Functions 和 Netlify Database 支持的跨设备双向回复流程。
 
 ## 在线地址
 
@@ -10,10 +10,11 @@
 ## 当前实现
 
 - 首页采用“奶油云朵信箱”视觉方向，桌面与移动端均可使用。
-- 本地演示认证默认启用，注册用户只能成为普通用户。
-- 管理员只看到会话匿名代号，不显示用户注册邮箱。
-- 用户和管理员的消息保存在同一浏览器的 `localStorage`，便于当前阶段完整演示。
-- 已接入 `@netlify/identity` 生产适配层，并准备好 Netlify 构建配置。
+- 本地运行默认启用演示认证；线上使用 Netlify Identity，公开注册用户只能成为普通用户。
+- 线上匿名代号由服务端随机生成。管理员 API 不返回用户邮箱、Identity 用户 ID 或登录身份。
+- 线上会话和消息保存在 Netlify Database；服务端会再次校验“普通用户只能访问自己的会话、管理员可以处理全部会话”。
+- 写请求会校验同源请求，消息长度限制为 4000 字符，API 响应禁用缓存。
+- 用户端与管理员端每 10 秒自动刷新一次，也会在发送消息和重新切回页面时刷新。
 - Product Design 的 Sites 运行时文件保留在 `app/.openai`、`app/worker` 和 `app/scripts`，后续可以继续交给 Sites 发布。
 
 ## 本地运行
@@ -24,7 +25,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-本地模式无需外部账号或密钥。
+本地模式无需外部账号或密钥，聊天数据保存在浏览器 `localStorage`，仅用于演示。生产数据不会走这个本地存储分支。
 
 ### 演示账号
 
@@ -40,34 +41,35 @@ npm.cmd run dev
 ```powershell
 cd app
 npm.cmd run build
-npm.cmd run test:sites
+npm.cmd test
 ```
 
 ## Netlify 准备
 
 仓库根目录的 `netlify.toml` 已配置：
 
-- Base directory：`app`
-- Build command：`npm run build`
-- Publish directory：`dist/client`
+- Build command：`npm --prefix app run build`
+- Publish directory：`app/dist/client`
+- Functions directory：`app/netlify/functions`
 - Node.js：20
 - SPA 路由回退与基础安全响应头
 - 生产与 Deploy Preview 使用 `VITE_AUTH_MODE=netlify`
+- 数据库迁移位于 `netlify/database/migrations`
 
-部署前需要在 Netlify 项目中执行：
+线上配置：
 
-1. 在 **Project configuration > Identity** 启用 Netlify Identity。
-2. 注册模式设为 Open，并保留邮箱确认。
-3. 普通注册用户默认视为 `client`。
-4. 只在 Netlify 管理端为倾听员账号添加 `admin` 角色；前端注册页不会提供角色选择。
-5. 使用 Deploy Preview 验证注册、邮箱确认、登录和退出。Netlify Identity 不能仅靠本地 `netlify dev` 完整验证。
+1. Netlify Identity 已启用，注册模式为 Open，并保留邮箱确认。
+2. `identity.mjs` 会给普通注册用户分配 `client` 角色。
+3. 只在 Netlify 管理端为倾听员账号添加 `admin` 角色；前端注册页不会提供角色选择。
+4. Netlify Database 会在部署时应用版本化 SQL 迁移。
 
-## 上线前仍需完成
+## 当前限制与后续事项
 
-当前匿名对话的持久化属于本地演示，不是生产数据库。正式上线前需要把 `src/data/chatStore.js` 替换为受服务端权限保护的消息 API，并接入 Netlify Database/Postgres；管理员权限和“只能读取自己会话”的规则必须在服务端再次校验，不能只依赖页面路由。
-
-同时建议补充消息保留期限、删除申请、管理员审计日志、限流、备份恢复和危机求助流程。
+- 需要用真实邮箱完成首个管理员账号的邀请/注册与 `admin` 角色授予，之后才能完成真实的跨角色端到端验收。
+- 当前为轻量 MVP，尚未实现消息保留期限、用户自助删除申请、管理员审计日志和应用级限流。
+- Netlify Database 默认不属于 HIPAA 合规环境，请勿把本站宣传为医疗服务，也不要收集受监管的医疗档案或可识别身份信息。
+- 本站不是紧急救援渠道；页面持续展示 110、120 与全国统一心理援助热线 12356。
 
 ## GitHub 状态
 
-当前目录已经是本地 Git 仓库，但本阶段没有创建远程仓库、没有推送，也没有执行提交。
+仓库已公开发布到 [makesisisi/cream-cloud-mailbox](https://github.com/makesisisi/cream-cloud-mailbox)，`main` 分支与 Netlify 连续部署连接。

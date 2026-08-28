@@ -1,7 +1,7 @@
 [build]
-  base = "app"
-  command = "npm run build"
-  publish = "dist/client"
+  command = "npm --prefix app run build"
+  publish = "app/dist/client"
+  functions = "app/netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"

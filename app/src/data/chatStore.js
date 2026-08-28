@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { authMode } from "../auth/authService.js";
 
 const CHAT_KEY = "cloudmail.demo.conversations";
 const CHAT_EVENT = "cloudmail:chat-updated";
+const API_ROOT = "/api/conversations";
 
 const seedConversations = [
   {
@@ -29,7 +31,11 @@ const seedConversations = [
   },
 ];
 
-function readConversations() {
+let apiCache = [];
+let apiLoaded = false;
+let activeRequest = null;
+
+function readLocalConversations() {
   try {
     const stored = window.localStorage.getItem(CHAT_KEY);
     if (stored) return JSON.parse(stored);
@@ -40,29 +46,102 @@ function readConversations() {
   return seedConversations;
 }
 
-function writeConversations(conversations) {
+function writeLocalConversations(conversations) {
   window.localStorage.setItem(CHAT_KEY, JSON.stringify(conversations));
   window.dispatchEvent(new CustomEvent(CHAT_EVENT));
 }
 
-export function useConversations() {
-  const [conversations, setConversations] = useState(() => readConversations());
-
-  useEffect(() => {
-    const refresh = () => setConversations(readConversations());
-    window.addEventListener(CHAT_EVENT, refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener(CHAT_EVENT, refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
-
-  return conversations;
+async function apiRequest(path = "", options = {}) {
+  const response = await fetch(`${API_ROOT}${path}`, {
+    credentials: "same-origin",
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "对话服务暂时不可用，请稍后再试。");
+  return payload;
 }
 
-export function createConversation(session, { topic, need }) {
-  const conversations = readConversations();
+async function loadApiConversations() {
+  if (activeRequest) return activeRequest;
+  activeRequest = apiRequest()
+    .then(({ conversations }) => {
+      apiCache = conversations;
+      apiLoaded = true;
+      return conversations;
+    })
+    .finally(() => {
+      activeRequest = null;
+    });
+  return activeRequest;
+}
+
+function notifyApiUpdated() {
+  window.dispatchEvent(new CustomEvent(CHAT_EVENT));
+}
+
+export function useConversations() {
+  const [state, setState] = useState(() => ({
+    conversations: authMode === "demo" ? readLocalConversations() : apiCache,
+    loading: authMode === "netlify" && !apiLoaded,
+    error: "",
+  }));
+
+  const refresh = useCallback(async () => {
+    if (authMode === "demo") {
+      setState({ conversations: readLocalConversations(), loading: false, error: "" });
+      return;
+    }
+    try {
+      const conversations = await loadApiConversations();
+      setState({ conversations, loading: false, error: "" });
+    } catch (reason) {
+      setState((current) => ({
+        ...current,
+        loading: false,
+        error: reason instanceof Error ? reason.message : "对话服务暂时不可用。",
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    let timer;
+    const handleUpdate = () => refresh();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener(CHAT_EVENT, handleUpdate);
+    window.addEventListener("storage", handleUpdate);
+    document.addEventListener("visibilitychange", handleVisibility);
+    refresh();
+    if (authMode === "netlify") timer = window.setInterval(refresh, 10_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(CHAT_EVENT, handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [refresh]);
+
+  return { ...state, refresh };
+}
+
+export async function createConversation(session, { topic, need }) {
+  if (authMode === "netlify") {
+    const { conversation } = await apiRequest("", {
+      method: "POST",
+      body: JSON.stringify({ topic, need }),
+    });
+    apiCache = [conversation, ...apiCache.filter((item) => item.id !== conversation.id)];
+    apiLoaded = true;
+    notifyApiUpdated();
+    return conversation;
+  }
+
+  const conversations = readLocalConversations();
   const active = conversations.find(
     (conversation) => conversation.clientId === session.id && conversation.status !== "closed",
   );
@@ -86,15 +165,25 @@ export function createConversation(session, { topic, need }) {
       },
     ],
   };
-  writeConversations([conversation, ...conversations]);
+  writeLocalConversations([conversation, ...conversations]);
   return conversation;
 }
 
-export function sendMessage(conversationId, sender, body) {
+export async function sendMessage(conversationId, sender, body) {
   const text = body.trim();
-  if (!text) return;
+  if (!text) return null;
+  if (authMode === "netlify") {
+    const { conversation } = await apiRequest(`/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body: text }),
+    });
+    apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
+    notifyApiUpdated();
+    return conversation;
+  }
+
   const now = new Date().toISOString();
-  const conversations = readConversations().map((conversation) => {
+  const conversations = readLocalConversations().map((conversation) => {
     if (conversation.id !== conversationId) return conversation;
     return {
       ...conversation,
@@ -106,14 +195,23 @@ export function sendMessage(conversationId, sender, body) {
       ],
     };
   });
-  writeConversations(conversations);
+  writeLocalConversations(conversations);
+  return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }
 
-export function closeConversation(conversationId) {
-  const conversations = readConversations().map((conversation) =>
+export async function closeConversation(conversationId) {
+  if (authMode === "netlify") {
+    const { conversation } = await apiRequest(`/${conversationId}/close`, { method: "POST" });
+    apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
+    notifyApiUpdated();
+    return conversation;
+  }
+
+  const conversations = readLocalConversations().map((conversation) =>
     conversation.id === conversationId
       ? { ...conversation, status: "closed", updatedAt: new Date().toISOString() }
       : conversation,
   );
-  writeConversations(conversations);
+  writeLocalConversations(conversations);
+  return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }

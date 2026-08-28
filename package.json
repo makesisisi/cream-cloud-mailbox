@@ -1,0 +1,15 @@
+{
+  "name": "cream-cloud-mailbox",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "app"
+  ],
+  "scripts": {
+    "build": "npm --prefix app run build",
+    "test": "npm --prefix app test"
+  },
+  "dependencies": {
+    "@netlify/database": "^2.0.0"
+  }
+}

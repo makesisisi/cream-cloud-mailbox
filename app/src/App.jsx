@@ -317,7 +317,7 @@ function ProtectedRoute({ role, children }) {
   return children;
 }
 
-function AppHeader({ title, subtitle }) {
+function AppHeader({ title, subtitle, identityName }) {
   const { session, logout } = useAuth();
   const navigate = useNavigate();
   return (
@@ -326,7 +326,7 @@ function AppHeader({ title, subtitle }) {
       <div className="app-header-title"><strong>{title}</strong><span>{subtitle}</span></div>
       <div className="app-user">
         <span className="role-badge">{session.role === "admin" ? "管理员" : "匿名用户"}</span>
-        <strong>{session.role === "admin" ? session.displayName : session.alias}</strong>
+        <strong>{identityName ?? (session.role === "admin" ? session.displayName : session.alias)}</strong>
         <button className="icon-button" type="button" onClick={async () => { await logout(); navigate("/"); }} aria-label="退出登录"><SignOut size={20} /></button>
       </div>
     </header>
@@ -335,16 +335,28 @@ function AppHeader({ title, subtitle }) {
 
 function UserDashboard() {
   const { session } = useAuth();
-  const conversations = useConversations();
+  const { conversations, loading, error } = useConversations();
   const navigate = useNavigate();
-  const mine = conversations.filter((conversation) => conversation.clientId === session.id);
+  const mine = conversations.filter(
+    (conversation) => !conversation.clientId || conversation.clientId === session.id,
+  );
   const active = mine.find((conversation) => conversation.status !== "closed");
   const [topic, setTopic] = useState("最近有点累");
   const [need, setNeed] = useState("希望有人先听我说说");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
 
-  function startConversation() {
-    const conversation = createConversation(session, { topic, need });
-    navigate(`/chat/${conversation.id}`);
+  async function startConversation() {
+    setBusy(true);
+    setActionError("");
+    try {
+      const conversation = await createConversation(session, { topic, need });
+      navigate(`/chat/${conversation.id}`);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "暂时无法创建会话，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -355,12 +367,16 @@ function UserDashboard() {
           <div>
             <span className="eyebrow"><Heart size={17} weight="fill" /> 晚上好，{session.displayName}</span>
             <h1>今天想从哪里说起？</h1>
-            <p>你在本次会话中的匿名代号是 <strong>{session.alias}</strong>。倾听员只会看到这个代号。</p>
+            <p>{active ? <>你在本次会话中的匿名代号是 <strong>{active.alias}</strong>。倾听员只会看到这个代号。</> : "创建会话后，系统会为这次倾诉生成一个随机匿名代号。"}</p>
           </div>
           <span className="privacy-seal"><LockKey size={28} weight="duotone" /> 身份已隐藏</span>
         </section>
 
-        {active ? (
+        {(error || actionError) && <div className="form-message error"><WarningCircle size={18} /> {actionError || error}</div>}
+
+        {loading ? (
+          <section className="current-conversation"><Cloud size={32} weight="duotone" /> 正在读取你的信箱…</section>
+        ) : active ? (
           <section className="current-conversation">
             <div className="conversation-icon"><ChatsCircle size={34} weight="duotone" /></div>
             <div><span>正在进行的倾诉</span><h2>{active.topic}</h2><p>{statusLabels[active.status]} · {active.messages.length} 条消息</p></div>
@@ -381,7 +397,7 @@ function UserDashboard() {
                 </select>
               </label>
             </div>
-            <button className="button button-primary" type="button" onClick={startConversation}><ChatCircleDots size={21} weight="fill" /> 创建匿名会话</button>
+            <button className="button button-primary" type="button" disabled={busy} onClick={startConversation}><ChatCircleDots size={21} weight="fill" /> {busy ? "正在创建…" : "创建匿名会话"}</button>
           </section>
         )}
 
@@ -398,24 +414,50 @@ function UserDashboard() {
 function ChatPage() {
   const { id } = useParams();
   const { session } = useAuth();
-  const conversations = useConversations();
+  const { conversations, loading, error, refresh } = useConversations();
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
   const conversation = conversations.find((item) => item.id === id);
 
-  if (!conversation || (session.role === "client" && conversation.clientId !== session.id)) {
+  if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在读取对话…</div>;
+  if (error && !conversation) {
+    return <div className="screen-loader"><WarningCircle size={34} /> {error}<button className="button button-secondary" type="button" onClick={refresh}>重试</button></div>;
+  }
+  if (!conversation || (session.role === "client" && conversation.clientId && conversation.clientId !== session.id)) {
     return <Navigate to={session.role === "admin" ? "/admin" : "/app"} replace />;
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    sendMessage(conversation.id, session.role, draft);
-    setDraft("");
+    setBusy(true);
+    setActionError("");
+    try {
+      await sendMessage(conversation.id, session.role, draft);
+      setDraft("");
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "消息发送失败，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClose() {
+    setBusy(true);
+    setActionError("");
+    try {
+      await closeConversation(conversation.id);
+      navigate(session.role === "admin" ? "/admin" : "/app");
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "暂时无法结束会话。");
+      setBusy(false);
+    }
   }
 
   return (
     <div className="app-shell">
-      <AppHeader title={session.role === "admin" ? `正在倾听 ${conversation.alias}` : "匿名倾诉"} subtitle={statusLabels[conversation.status]} />
+      <AppHeader title={session.role === "admin" ? `正在倾听 ${conversation.alias}` : "匿名倾诉"} subtitle={statusLabels[conversation.status]} identityName={session.role === "client" ? conversation.alias : undefined} />
       <main className="chat-layout">
         <aside className="chat-summary">
           <button className="back-link" type="button" onClick={() => navigate(session.role === "admin" ? "/admin" : "/app")}><House size={18} /> 返回工作台</button>
@@ -423,7 +465,7 @@ function ChatPage() {
           <h2>{conversation.alias}</h2>
           <p>{session.role === "admin" ? "对方的注册邮箱和真实姓名不会显示在这里。" : "这是倾听员在本次对话中看到的唯一身份代号。"}</p>
           <dl><div><dt>倾诉主题</dt><dd>{conversation.topic}</dd></div><div><dt>希望得到</dt><dd>{conversation.need}</dd></div></dl>
-          <button className="quiet-danger" type="button" onClick={() => { closeConversation(conversation.id); navigate(session.role === "admin" ? "/admin" : "/app"); }}><XCircle size={18} /> 结束本次会话</button>
+          <button className="quiet-danger" type="button" disabled={busy} onClick={handleClose}><XCircle size={18} /> 结束本次会话</button>
         </aside>
         <section className="messenger" aria-label="匿名对话消息">
           <div className="message-list">
@@ -440,9 +482,10 @@ function ChatPage() {
             <label htmlFor="message-input">把想说的话放在这里</label>
             <div>
               <textarea id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="不需要组织得很完整，慢慢说就好…" rows="3" disabled={conversation.status === "closed"} />
-              <button className="send-button" type="submit" disabled={!draft.trim() || conversation.status === "closed"} aria-label="发送消息"><PaperPlaneTilt size={22} weight="fill" /></button>
+              <button className="send-button" type="submit" disabled={busy || !draft.trim() || conversation.status === "closed"} aria-label="发送消息"><PaperPlaneTilt size={22} weight="fill" /></button>
             </div>
             <span><LockKey size={15} /> 请避免发送姓名、地址、身份证号等可识别信息</span>
+            {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
           </form>
         </section>
       </main>
@@ -451,17 +494,27 @@ function ChatPage() {
 }
 
 function AdminDashboard() {
-  const conversations = useConversations();
+  const { conversations, loading, error } = useConversations();
   const [selectedId, setSelectedId] = useState(() => conversations[0]?.id ?? null);
   const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
   const selected = conversations.find((conversation) => conversation.id === selectedId) ?? conversations[0];
   const waitingCount = conversations.filter((conversation) => conversation.status === "waiting").length;
 
-  function reply(event) {
+  async function reply(event) {
     event.preventDefault();
     if (!selected) return;
-    sendMessage(selected.id, "admin", draft);
-    setDraft("");
+    setBusy(true);
+    setActionError("");
+    try {
+      await sendMessage(selected.id, "admin", draft);
+      setDraft("");
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "回复发送失败，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -482,7 +535,8 @@ function AdminDashboard() {
                 </button>
               );
             })}
-            {!conversations.length && <div className="empty-state"><ChatsCircle size={34} /><p>暂时没有新会话</p></div>}
+            {loading && !conversations.length && <div className="empty-state"><Cloud size={34} weight="duotone" /><p>正在读取会话…</p></div>}
+            {!loading && !conversations.length && <div className="empty-state"><ChatsCircle size={34} /><p>暂时没有新会话</p></div>}
           </div>
         </aside>
         <section className="admin-conversation">
@@ -500,10 +554,11 @@ function AdminDashboard() {
               </div>
               <form className="admin-composer" onSubmit={reply}>
                 <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows="3" placeholder="先接住情绪，再慢慢回应…" disabled={selected.status === "closed"} />
-                <div><span><ShieldCheck size={17} /> 回复前确认：不诊断、不评判、不承诺即时救援</span><button className="button button-primary" disabled={!draft.trim() || selected.status === "closed"} type="submit">发送回复 <PaperPlaneTilt size={18} weight="fill" /></button></div>
+                {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
+                <div><span><ShieldCheck size={17} /> 回复前确认：不诊断、不评判、不承诺即时救援</span><button className="button button-primary" disabled={busy || !draft.trim() || selected.status === "closed"} type="submit">发送回复 <PaperPlaneTilt size={18} weight="fill" /></button></div>
               </form>
             </>
-          ) : <div className="empty-state large"><ChatsCircle size={48} /><h2>选择一段会话开始倾听</h2></div>}
+          ) : <div className="empty-state large">{error ? <><WarningCircle size={48} /><h2>{error}</h2></> : <><ChatsCircle size={48} /><h2>选择一段会话开始倾听</h2></>}</div>}
         </section>
         {selected && (
           <aside className="admin-details">
@@ -523,8 +578,8 @@ function Footer() {
   return (
     <footer className="site-footer">
       <Brand compact />
-      <p>一个用于匿名表达与温柔倾听的空间 · 当前为本地功能原型</p>
-      <div><Link to="/tips">心理小贴士</Link><a href="mailto:hello@example.com">联系我们</a></div>
+      <p>一个用于匿名表达与温柔倾听的空间 · 对话内容由登录与权限规则保护</p>
+      <div><Link to="/tips">心理小贴士</Link><a href="https://github.com/makesisisi/cream-cloud-mailbox/issues" target="_blank" rel="noreferrer">问题反馈</a></div>
     </footer>
   );
 }

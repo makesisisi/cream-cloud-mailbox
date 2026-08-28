@@ -1,8 +1,10 @@
+node_modules/
 app/node_modules/
 app/dist/
 app/.env
 app/.env.local
 app/.netlify/
+.netlify/
 app/implementation-*.jpg
 app/implementation-*.png
 app/design-qa-comparison-*.jpg
