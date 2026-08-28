@@ -1,4 +1,5 @@
 import {
+  acceptInvite as netlifyAcceptInvite,
   getUser as getNetlifyUser,
   handleAuthCallback,
   login as netlifyLogin,
@@ -78,13 +79,20 @@ function toNetlifySession(user) {
 
 export async function hydrateSession() {
   if (authMode === "netlify") {
-    await handleAuthCallback();
-    const user = await getNetlifyUser();
-    return user ? toNetlifySession(user) : null;
+    const callback = await handleAuthCallback();
+    if (callback?.type === "invite") return { session: null, callback };
+    const user = callback?.user ?? await getNetlifyUser();
+    return { session: user ? toNetlifySession(user) : null, callback: null };
   }
 
   ensureDemoUsers();
-  return readJson(SESSION_KEY, null);
+  return { session: readJson(SESSION_KEY, null), callback: null };
+}
+
+export async function acceptInviteWithPassword(token, password) {
+  if (authMode !== "netlify") throw new Error("本地演示模式不处理线上邀请。");
+  const user = await netlifyAcceptInvite(token, password);
+  return toNetlifySession(user);
 }
 
 export async function loginWithEmail(email, password) {

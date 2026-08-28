@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
+  acceptInviteWithPassword,
   authMode,
   hydrateSession,
   loginWithEmail,
@@ -11,12 +12,21 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
+  const [authCallback, setAuthCallback] = useState(null);
+  const [authError, setAuthError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     hydrateSession()
-      .then((value) => active && setSession(value))
+      .then((result) => {
+        if (!active) return;
+        setSession(result.session);
+        setAuthCallback(result.callback);
+      })
+      .catch((reason) => {
+        if (active) setAuthError(reason instanceof Error ? reason.message : "邀请链接无法处理，请重新打开邮件中的链接。");
+      })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -28,6 +38,17 @@ export function AuthProvider({ children }) {
       session,
       loading,
       authMode,
+      authCallback,
+      authError,
+      clearAuthError() {
+        setAuthError("");
+      },
+      async completeInvite(token, password) {
+        const next = await acceptInviteWithPassword(token, password);
+        setSession(next);
+        setAuthCallback(null);
+        return next;
+      },
       async login(email, password) {
         const next = await loginWithEmail(email, password);
         setSession(next);
@@ -43,7 +64,7 @@ export function AuthProvider({ children }) {
         setSession(null);
       },
     }),
-    [loading, session],
+    [authCallback, authError, loading, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

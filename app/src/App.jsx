@@ -309,6 +309,84 @@ function AuthPage({ mode }) {
   );
 }
 
+function InviteAcceptPage({ token }) {
+  const { completeInvite } = useAuth();
+  const navigate = useNavigate();
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    if (password !== confirmation) {
+      setError("两次输入的密码不一致，请重新确认。");
+      return;
+    }
+    setBusy(true);
+    try {
+      const session = await completeInvite(token, password);
+      navigate(session.role === "admin" ? "/admin" : "/app", { replace: true });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "邀请暂时无法接受，请重新打开邮件中的链接。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="page auth-page">
+      <SiteHeader />
+      <main className="auth-layout">
+        <section className="auth-intro">
+          <span className="eyebrow"><ShieldCheck size={18} weight="duotone" /> 安全完成账号邀请</span>
+          <h1>给管理员账号，<br />设置一个只有你知道的密码。</h1>
+          <p>密码只会提交给 Netlify Identity。设置完成后，网站会直接打开倾听员工作台。</p>
+          <ul>
+            <li><CheckCircle size={21} weight="fill" /> 不要把密码或邮件令牌发送给任何人</li>
+            <li><CheckCircle size={21} weight="fill" /> 管理员只能看到来访者的匿名代号</li>
+            <li><CheckCircle size={21} weight="fill" /> 建议使用独立且不重复的密码</li>
+          </ul>
+        </section>
+        <section className="auth-card" aria-labelledby="invite-title">
+          <div className="auth-card-heading">
+            <span className="auth-icon"><LockKey size={26} /></span>
+            <div><h2 id="invite-title">接受管理员邀请</h2><p>设置密码后即可登录</p></div>
+          </div>
+          <form onSubmit={submit}>
+            <label>设置密码
+              <input type="password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" />
+            </label>
+            <label>再次输入密码
+              <input type="password" minLength={8} required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="再次输入相同密码" autoComplete="new-password" />
+            </label>
+            {error && <div className="form-message error"><WarningCircle size={18} /> {error}</div>}
+            <button className="button button-primary button-block" disabled={busy} type="submit">
+              {busy ? "正在启用账号…" : "设置密码并进入工作台"}
+            </button>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function AuthCallbackErrorPage({ message, onDismiss }) {
+  return (
+    <div className="page auth-page">
+      <SiteHeader />
+      <main className="content-page">
+        <section className="auth-card">
+          <div className="form-message error"><WarningCircle size={20} /> {message}</div>
+          <p>请重新打开最新一封 Netlify 邀请邮件中的链接；如果链接已经过期，可以让管理员重新发送邀请。</p>
+          <button className="button button-secondary" type="button" onClick={onDismiss}>返回首页</button>
+        </section>
+      </main>
+    </div>
+  );
+}
+
 function ProtectedRoute({ role, children }) {
   const { session, loading } = useAuth();
   if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在打开信箱…</div>;
@@ -589,6 +667,13 @@ function formatTime(value) {
 }
 
 function AppRoutes() {
+  const { authCallback, authError, clearAuthError, loading } = useAuth();
+  if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在确认邀请…</div>;
+  if (authCallback?.type === "invite" && authCallback.token) {
+    return <InviteAcceptPage token={authCallback.token} />;
+  }
+  if (authError) return <AuthCallbackErrorPage message={authError} onDismiss={clearAuthError} />;
+
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
