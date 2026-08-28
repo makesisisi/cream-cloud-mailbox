@@ -6,6 +6,7 @@ import {
   logout as netlifyLogout,
   signup as netlifySignup,
 } from "@netlify/identity";
+import { isConfirmedIdentityUser } from "./identityState.js";
 
 const SESSION_KEY = "cloudmail.demo.session";
 const USERS_KEY = "cloudmail.demo.users";
@@ -116,9 +117,10 @@ export async function registerWithEmail({ email, password, displayName }) {
     const user = await netlifySignup(email, password, {
       full_name: displayName || "匿名来访者",
     });
+    const confirmed = isConfirmedIdentityUser(user);
     return {
-      session: user.emailVerified ? toNetlifySession(user) : null,
-      needsConfirmation: !user.emailVerified,
+      session: confirmed ? toNetlifySession(user) : null,
+      needsConfirmation: !confirmed,
     };
   }
 
