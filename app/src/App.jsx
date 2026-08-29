@@ -49,6 +49,7 @@ import {
   formatListTime,
   formatTime,
   getGreeting,
+  getMessagePerspectiveClass,
   groupMessagesByDate,
 } from "./utils/presentation.js";
 
@@ -821,7 +822,7 @@ function ChatPage() {
               <div className="message-day-group" key={group.key}>
                 <div className="chat-day">{formatConversationDate(group.date)}</div>
                 {group.messages.map((message) => (
-                  <div className={`message-row message-${message.sender}`} key={message.id}>
+                  <div className={`message-row message-${message.sender} ${getMessagePerspectiveClass(message.sender, session.role)}`} key={message.id}>
                     <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "倾听员" : conversation.alias}</span>
                     <div className="message-bubble">{message.body}</div>
                     <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
@@ -1055,7 +1056,7 @@ function AdminDashboard() {
                   <div className="message-day-group" key={group.key}>
                     <div className="chat-day">{formatConversationDate(group.date)}</div>
                     {group.messages.map((message) => (
-                      <div className={`message-row message-${message.sender}`} key={message.id}>
+                      <div className={`message-row message-${message.sender} ${getMessagePerspectiveClass(message.sender, "admin")}`} key={message.id}>
                         <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "我" : selected.alias}</span>
                         <div className="message-bubble">{message.body}</div>
                         <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>

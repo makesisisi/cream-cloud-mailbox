@@ -1392,13 +1392,15 @@ dd {
   gap: 5px;
 }
 
-.message-row.message-client {
+.message-row.message-own {
   margin-left: auto;
+  margin-right: 0;
   justify-items: end;
 }
 
-.message-row.message-admin,
+.message-row.message-other,
 .message-row.message-system {
+  margin-left: 0;
   margin-right: auto;
   justify-items: start;
 }
@@ -1418,14 +1420,14 @@ dd {
   font-size: 14px;
 }
 
-.message-client .message-bubble {
+.message-own .message-bubble {
   color: #fff;
   border-color: var(--peach);
   background: var(--peach);
   border-bottom-right-radius: 6px;
 }
 
-.message-admin .message-bubble {
+.message-other .message-bubble {
   border-bottom-left-radius: 6px;
 }
 

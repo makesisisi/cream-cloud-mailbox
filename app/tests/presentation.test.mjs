@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   formatConversationDate,
   getGreeting,
+  getMessagePerspectiveClass,
   groupMessagesByDate,
 } from "../src/utils/presentation.js";
 
@@ -10,6 +11,14 @@ test("uses a time-appropriate greeting instead of a fixed evening greeting", () 
   assert.equal(getGreeting(new Date(2026, 0, 1, 8)), "早上好");
   assert.equal(getGreeting(new Date(2026, 0, 1, 15)), "下午好");
   assert.equal(getGreeting(new Date(2026, 0, 1, 21)), "晚上好");
+});
+
+test("aligns messages by the current viewer rather than by a fixed sender role", () => {
+  assert.equal(getMessagePerspectiveClass("client", "client"), "message-own");
+  assert.equal(getMessagePerspectiveClass("admin", "client"), "message-other");
+  assert.equal(getMessagePerspectiveClass("admin", "admin"), "message-own");
+  assert.equal(getMessagePerspectiveClass("client", "admin"), "message-other");
+  assert.equal(getMessagePerspectiveClass("system", "admin"), "message-system");
 });
 
 test("labels current and previous conversation dates naturally", () => {

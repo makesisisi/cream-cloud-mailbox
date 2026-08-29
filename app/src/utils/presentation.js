@@ -58,3 +58,8 @@ export function groupMessagesByDate(messages) {
     return groups;
   }, []);
 }
+
+export function getMessagePerspectiveClass(sender, viewerRole) {
+  if (sender === "system") return "message-system";
+  return sender === viewerRole ? "message-own" : "message-other";
+}
