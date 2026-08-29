@@ -39,7 +39,9 @@ import { demoAccounts } from "./auth/authService.js";
 import {
   closeConversation,
   createConversation,
+  retryAiAnalysis,
   sendMessage,
+  setAiAssistance,
   useConversations,
 } from "./data/chatStore.js";
 import {
@@ -261,6 +263,7 @@ function AboutPage() {
           <div className="privacy-grid">
             <article><ShieldCheck size={28} weight="duotone" /><h3>权限隔离</h3><p>普通用户只能读取自己的会话，管理员只能通过受保护的工作台回复。</p></article>
             <article><UserCircle size={28} weight="duotone" /><h3>最少展示</h3><p>对话界面不展示邮箱、真实姓名或登录方式；也请不要主动发送可识别信息。</p></article>
+            <article><Sparkle size={28} weight="duotone" /><h3>AI 辅助可选</h3><p>只有在你主动勾选后，AI才会分析本次对话的情绪线索。结果仅供倾听员参考，不会自动回复或作出诊断。</p></article>
             <article><WarningCircle size={28} weight="duotone" /><h3>服务边界</h3><p>本站不是紧急救援渠道。若存在即时危险，请拨打 110、120 或心理援助热线 12356。</p></article>
           </div>
         </section>
@@ -627,6 +630,7 @@ function UserDashboard() {
   const history = mine.filter((conversation) => conversation.status === "closed");
   const [topic, setTopic] = useState("最近有点累");
   const [need, setNeed] = useState("希望有人先听我说说");
+  const [aiConsent, setAiConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
 
@@ -634,7 +638,7 @@ function UserDashboard() {
     setBusy(true);
     setActionError("");
     try {
-      const conversation = await createConversation(session, { topic, need });
+      const conversation = await createConversation(session, { topic, need, aiConsent });
       navigate(`/chat/${conversation.id}`);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "暂时无法创建会话，请稍后再试。");
@@ -681,6 +685,10 @@ function UserDashboard() {
                 </select>
               </label>
             </div>
+            <label className="ai-consent-option">
+              <input type="checkbox" checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} />
+              <span><strong>允许 AI 辅助倾听</strong><small>AI会分析本次对话中的情绪线索，为倾听员提供建议；结果仅供人工参考，不做诊断，也不会自动回复。你可以不勾选，正常倾诉不受影响。</small></span>
+            </label>
             <button className="button button-primary" type="button" disabled={busy} onClick={startConversation}><ChatCircleDots size={21} weight="fill" /> {busy ? "正在创建…" : "创建匿名会话"}</button>
           </section>
         )}
@@ -722,6 +730,7 @@ function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [confirmingClose, setConfirmingClose] = useState(false);
+  const [aiSettingBusy, setAiSettingBusy] = useState(false);
   const messageEndRef = useRef(null);
   const conversation = conversations.find((item) => item.id === id);
 
@@ -764,6 +773,19 @@ function ChatPage() {
     }
   }
 
+  async function handleAiAssistanceChange(event) {
+    const enabled = event.target.checked;
+    setAiSettingBusy(true);
+    setActionError("");
+    try {
+      await setAiAssistance(conversation.id, enabled);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "暂时无法更改 AI 辅助设置。");
+    } finally {
+      setAiSettingBusy(false);
+    }
+  }
+
   function handleComposerKeyDown(event) {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && draft.trim() && !busy) {
       event.preventDefault();
@@ -781,6 +803,12 @@ function ChatPage() {
           <h2>{conversation.alias}</h2>
           <p>{session.role === "admin" ? "对方的注册邮箱和真实姓名不会显示在这里。" : "这是倾听员在本次对话中看到的唯一身份代号。"}</p>
           <dl><div><dt>倾诉主题</dt><dd>{conversation.topic}</dd></div><div><dt>希望得到</dt><dd>{conversation.need}</dd></div></dl>
+          {session.role === "client" && (
+            <label className="chat-ai-toggle">
+              <input type="checkbox" checked={Boolean(conversation.aiAssistanceEnabled)} disabled={aiSettingBusy} onChange={handleAiAssistanceChange} />
+              <span><strong>允许 AI 辅助倾听</strong><small>{conversation.aiAssistanceEnabled ? "已开启；关闭后会停止分析并删除已有辅助结果。" : "未开启；正常聊天不受影响。"}</small></span>
+            </label>
+          )}
           {conversation.status === "closed" ? (
             <span className="closed-status"><CheckCircle size={18} /> 这段会话已结束</span>
           ) : (
@@ -835,6 +863,88 @@ function ChatPage() {
   );
 }
 
+const intensityLabels = ["较平稳", "轻微", "较明显", "强烈"];
+
+function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = false, compact = false }) {
+  const analysis = conversation.aiAnalysis;
+  const lastClientMessage = conversation.messages.filter((message) => message.sender === "client").at(-1);
+  const stale = analysis?.status === "ready" && lastClientMessage && analysis.sourceMessageId !== lastClientMessage.id;
+
+  if (!conversation.aiAssistanceEnabled) {
+    return (
+      <section className={`ai-assistant-panel ${compact ? "compact" : ""}`}>
+        <div className="ai-panel-heading"><span><Sparkle size={18} weight="fill" /> AI 辅助观察</span><i className="ai-state muted">未开启</i></div>
+        <p className="ai-empty-copy">倾诉者没有授权本次会话使用 AI 分析。聊天功能保持正常，倾听员仍可按照自己的判断回应。</p>
+      </section>
+    );
+  }
+
+  if (!analysis) {
+    return (
+      <section className={`ai-assistant-panel ${compact ? "compact" : ""}`}>
+        <div className="ai-panel-heading"><span><Sparkle size={18} weight="fill" /> AI 辅助观察</span><i className="ai-state muted">等待消息</i></div>
+        <p className="ai-empty-copy">倾诉者发送新消息后，这里会出现情绪线索与回应建议。</p>
+      </section>
+    );
+  }
+
+  if (analysis.status === "pending") {
+    return (
+      <section className={`ai-assistant-panel ${compact ? "compact" : ""}`} aria-live="polite">
+        <div className="ai-panel-heading"><span><Sparkle size={18} weight="fill" /> AI 辅助观察</span><i className="ai-state analyzing">分析中</i></div>
+        <div className="ai-loading"><span /><span /><span /></div>
+        <p className="ai-empty-copy">正在结合最近对话整理情绪线索，不会影响消息收发。</p>
+      </section>
+    );
+  }
+
+  if (analysis.status === "failed") {
+    return (
+      <section className={`ai-assistant-panel ${compact ? "compact" : ""}`} aria-live="polite">
+        <div className="ai-panel-heading"><span><Sparkle size={18} weight="fill" /> AI 辅助观察</span><i className="ai-state failed">暂时失败</i></div>
+        <p className="ai-empty-copy">本次分析没有完成，正常聊天不受影响。可以稍后重新尝试。</p>
+        <button className="ai-text-button" type="button" disabled={retrying} onClick={onRetry}>{retrying ? "正在重试…" : "重新分析"}</button>
+      </section>
+    );
+  }
+
+  const urgent = analysis.safetyLevel === "urgent";
+  const watch = analysis.safetyLevel === "watch";
+  return (
+    <section className={`ai-assistant-panel ${compact ? "compact" : ""} ${urgent ? "urgent" : watch ? "watch" : ""}`} aria-live="polite">
+      <div className="ai-panel-heading">
+        <span><Sparkle size={18} weight="fill" /> AI 辅助观察</span>
+        <i className={`ai-state ${urgent ? "urgent" : watch ? "watch" : "ready"}`}>{urgent ? "立即复核" : watch ? "建议关注" : stale ? "待更新" : "已更新"}</i>
+      </div>
+      {stale && <p className="ai-stale-note"><WarningCircle size={16} /> 当前提示对应较早消息，请等待最新分析。</p>}
+      <div className="ai-emotion-summary">
+        <span>可能的感受</span>
+        <strong>{analysis.primaryEmotion || "需要进一步倾听"}</strong>
+        <small>{intensityLabels[analysis.intensity] ?? "需要确认"}{analysis.secondaryEmotions?.length ? ` · ${analysis.secondaryEmotions.join("、")}` : ""}</small>
+      </div>
+      <dl className="ai-insights">
+        <div><dt>可能更需要</dt><dd>{analysis.currentNeed}</dd></div>
+        <div><dt>观察线索</dt><dd>{analysis.observation}</dd></div>
+      </dl>
+      {(urgent || watch) && (
+        <div className="ai-safety-card">
+          <strong><WarningCircle size={18} weight="fill" /> {urgent ? "请立即人工确认安全状况" : "建议尽快人工确认"}</strong>
+          {analysis.safetyReasons?.map((reason) => <p key={reason}>{reason}</p>)}
+          {urgent && <p>不要独自承担。按校方危机干预流程联系专业人员；可拨打 <a href="tel:12356">12356</a>，存在立即危险时联系 110 / 120。</p>}
+        </div>
+      )}
+      <div className="ai-suggestion">
+        <span>建议先这样回应</span>
+        <p>{analysis.suggestedOpening}</p>
+        <button type="button" onClick={() => onUseSuggestion(analysis.suggestedOpening)}>放入回复框</button>
+      </div>
+      {!!analysis.followUpQuestions?.length && <div className="ai-question"><span>可以轻轻追问</span><p>{analysis.followUpQuestions[0]}</p></div>}
+      {!!analysis.avoidPhrases?.length && <p className="ai-avoid">尽量避免：{analysis.avoidPhrases.join("、")}</p>}
+      <footer><ShieldCheck size={15} /> AI 可能误判，仅供倾听员参考，不构成心理诊断。</footer>
+    </section>
+  );
+}
+
 function AdminDashboard() {
   const { conversations, loading, error } = useConversations();
   const [selectedId, setSelectedId] = useState(() => conversations[0]?.id ?? null);
@@ -842,6 +952,8 @@ function AdminDashboard() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [retryingAnalysis, setRetryingAnalysis] = useState(false);
   const adminMessageEndRef = useRef(null);
   const filteredConversations = conversations.filter((conversation) => {
     if (filter === "waiting") return conversation.status === "waiting";
@@ -859,6 +971,8 @@ function AdminDashboard() {
   useEffect(() => {
     adminMessageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [selected?.id, selected?.messages.length]);
+
+  useEffect(() => setAiPanelOpen(false), [selected?.id]);
 
   async function reply(event) {
     event.preventDefault();
@@ -880,6 +994,23 @@ function AdminDashboard() {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
+  }
+
+  async function retrySelectedAnalysis() {
+    if (!selected || retryingAnalysis) return;
+    setRetryingAnalysis(true);
+    setActionError("");
+    try {
+      await retryAiAnalysis(selected.id);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "暂时无法重新分析。");
+    } finally {
+      setRetryingAnalysis(false);
+    }
+  }
+
+  function useAiSuggestion(suggestion) {
+    setDraft((current) => current.trim() ? `${current.trim()}\n\n${suggestion}` : suggestion);
   }
 
   return (
@@ -913,6 +1044,12 @@ function AdminDashboard() {
           {selected ? (
             <>
               <header><div><span className="avatar-cloud small"><Cloud size={28} weight="duotone" /></span><div><h2>{selected.alias}</h2><p>{selected.topic} · {statusLabels[selected.status]}</p></div></div><Link className="button button-secondary compact-button" to={`/chat/${selected.id}`}>打开完整会话</Link></header>
+              <button className={`ai-status-bar ${selected.aiAnalysis?.safetyLevel === "urgent" ? "urgent" : selected.aiAnalysis?.safetyLevel === "watch" ? "watch" : ""}`} type="button" onClick={() => setAiPanelOpen((open) => !open)} aria-expanded={aiPanelOpen}>
+                <span><Sparkle size={18} weight="fill" /><strong>AI 辅助观察</strong></span>
+                <span>{!selected.aiAssistanceEnabled ? "倾诉者未开启" : selected.aiAnalysis?.status === "pending" ? "正在分析最新消息…" : selected.aiAnalysis?.status === "failed" ? "分析暂时失败" : selected.aiAnalysis?.status === "ready" ? `可能感到：${selected.aiAnalysis.primaryEmotion} · ${selected.aiAnalysis.currentNeed}` : "等待倾诉消息"}</span>
+                <small>{aiPanelOpen ? "收起" : "查看建议"}</small>
+              </button>
+              {aiPanelOpen && <div className="ai-inline-panel"><AiAssistantPanel conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} compact /></div>}
               <div className="admin-messages">
                 {groupMessagesByDate(selected.messages).map((group) => (
                   <div className="message-day-group" key={group.key}>
@@ -946,6 +1083,7 @@ function AdminDashboard() {
             <h3>{selected.alias}</h3>
             <p>系统不会向倾听员展示邮箱、真实姓名或登录方式。</p>
             <dl><div><dt>当前状态</dt><dd>{statusLabels[selected.status]}</dd></div><div><dt>倾诉主题</dt><dd>{selected.topic}</dd></div><div><dt>希望得到</dt><dd>{selected.need}</dd></div><div><dt>消息数量</dt><dd>{selected.messages.length} 条</dd></div></dl>
+            <AiAssistantPanel conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} />
             <div className="admin-reminder"><Heart size={21} weight="fill" /><p>先回应感受，再询问事实。允许沉默，也允许用户暂停。</p></div>
           </aside>
         )}

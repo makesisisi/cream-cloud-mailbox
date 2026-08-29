@@ -1,4 +1,5 @@
 import { getDatabase } from "@netlify/database";
+import { ensureAiAnalysisSchema, loadLatestAiAnalyses } from "./_lib/ai-assistant.mjs";
 import {
   createAlias,
   HttpError,
@@ -40,7 +41,17 @@ async function listConversations(actor) {
     items.push(message);
     grouped.set(message.conversation_id, items);
   }
-  return conversations.map((conversation) => toConversation(conversation, grouped.get(conversation.id) ?? []));
+  let analyses = new Map();
+  if (actor.role === "admin") {
+    try {
+      analyses = await loadLatestAiAnalyses(ids);
+    } catch (error) {
+      console.error("ai-analysis-list-error", { code: error?.code });
+    }
+  }
+  return conversations.map((conversation) =>
+    toConversation(conversation, grouped.get(conversation.id) ?? [], analyses.get(conversation.id) ?? null),
+  );
 }
 
 async function createConversation(actor, request) {
@@ -49,9 +60,11 @@ async function createConversation(actor, request) {
   const payload = await parseJson(request);
   const topic = requiredText(payload.topic, "倾诉主题", MAX_TOPIC_LENGTH);
   const need = requiredText(payload.need, "倾听期待", MAX_NEED_LENGTH);
+  const aiConsent = payload.aiConsent === true;
   const client = await db.pool.connect();
 
   try {
+    await ensureAiAnalysisSchema();
     await client.query("BEGIN");
     const existing = await client.query(
       "SELECT * FROM conversations WHERE client_id = $1 AND status <> 'closed' LIMIT 1 FOR UPDATE",
@@ -69,8 +82,8 @@ async function createConversation(actor, request) {
     const id = crypto.randomUUID();
     const alias = createAlias();
     const inserted = await client.query(
-      "INSERT INTO conversations (id, client_id, alias, topic, need) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [id, actor.id, alias, topic, need],
+      "INSERT INTO conversations (id, client_id, alias, topic, need, ai_consent) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [id, actor.id, alias, topic, need, aiConsent],
     );
     const systemMessage = await client.query(
       "INSERT INTO conversation_messages (id, conversation_id, sender, body) VALUES ($1, $2, 'system', $3) RETURNING id, sender, body, created_at",

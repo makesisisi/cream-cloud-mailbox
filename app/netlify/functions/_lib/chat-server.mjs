@@ -1,6 +1,7 @@
 import { getDatabase } from "@netlify/database";
 import { getUser, verifyRequestOrigin } from "@netlify/identity";
 import { canAccessConversation, HttpError, toConversation } from "./chat-domain.mjs";
+import { loadLatestAiAnalysis } from "./ai-assistant.mjs";
 
 const db = getDatabase();
 
@@ -43,6 +44,10 @@ export async function requireConversation(actor, id) {
   return conversation;
 }
 
+export function requireAdmin(actor) {
+  if (actor.role !== "admin") throw new HttpError(403, "只有倾听员可以使用这个功能。");
+}
+
 export async function loadMessages(conversationId) {
   const { rows } = await db.pool.query(
     "SELECT id, sender, body, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
@@ -54,7 +59,15 @@ export async function loadMessages(conversationId) {
 export async function loadConversation(actor, id) {
   const conversation = await requireConversation(actor, id);
   const messages = await loadMessages(id);
-  return toConversation(conversation, messages);
+  let aiAnalysis = null;
+  if (actor.role === "admin") {
+    try {
+      aiAnalysis = await loadLatestAiAnalysis(id);
+    } catch (error) {
+      console.error("ai-analysis-load-error", { conversationId: id, code: error?.code });
+    }
+  }
+  return toConversation(conversation, messages, aiAnalysis);
 }
 
 export function json(data, init = {}) {

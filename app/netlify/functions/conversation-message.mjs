@@ -1,5 +1,6 @@
 import { getDatabase } from "@netlify/database";
 import { HttpError, MAX_MESSAGE_LENGTH, requiredText } from "./_lib/chat-domain.mjs";
+import { queueAiAnalysis, runAiAnalysis } from "./_lib/ai-assistant.mjs";
 import {
   handleError,
   json,
@@ -24,12 +25,13 @@ export default async (request, context) => {
     const payload = await parseJson(request);
     const body = requiredText(payload.body, "消息", MAX_MESSAGE_LENGTH);
     const sender = actor.role === "admin" ? "admin" : "client";
+    const messageId = crypto.randomUUID();
     const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
       await client.query(
         "INSERT INTO conversation_messages (id, conversation_id, sender, body) VALUES ($1, $2, $3, $4)",
-        [crypto.randomUUID(), conversation.id, sender, body],
+        [messageId, conversation.id, sender, body],
       );
       await client.query(
         "UPDATE conversations SET status = $1, updated_at = NOW() WHERE id = $2",
@@ -41,6 +43,15 @@ export default async (request, context) => {
       throw error;
     } finally {
       client.release();
+    }
+
+    if (sender === "client") {
+      try {
+        const queued = await queueAiAnalysis(conversation.id, messageId);
+        if (queued) context.waitUntil(runAiAnalysis(conversation.id, messageId));
+      } catch (error) {
+        console.error("ai-analysis-queue-error", { conversationId: conversation.id, code: error?.code });
+      }
     }
 
     return json({ conversation: await loadConversation(actor, conversation.id) }, { status: 201 });

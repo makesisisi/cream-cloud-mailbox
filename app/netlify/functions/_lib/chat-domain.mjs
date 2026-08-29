@@ -21,13 +21,14 @@ export function canAccessConversation(actor, conversation) {
   return actor.role === "admin" || conversation.client_id === actor.id;
 }
 
-export function toConversation(row, messages = []) {
-  return {
+export function toConversation(row, messages = [], aiAnalysis = null) {
+  const conversation = {
     id: row.id,
     alias: row.alias,
     topic: row.topic,
     need: row.need,
     status: row.status,
+    aiAssistanceEnabled: Boolean(row.ai_consent),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     messages: messages.map((message) => ({
@@ -37,6 +38,8 @@ export function toConversation(row, messages = []) {
       createdAt: new Date(message.created_at).toISOString(),
     })),
   };
+  if (aiAnalysis) conversation.aiAnalysis = aiAnalysis;
+  return conversation;
 }
 
 export function createAlias() {
