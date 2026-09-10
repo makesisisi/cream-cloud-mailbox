@@ -1,5 +1,6 @@
 import { getDatabase } from "@netlify/database";
 import OpenAI from "openai";
+import { readPrivateImage } from "./chat-attachments.mjs";
 
 let database;
 
@@ -8,9 +9,11 @@ function getDb() {
   return database;
 }
 
-export const AI_PROMPT_VERSION = "emotion-support-v1";
-export const DEFAULT_GATEWAY_MODEL = "deepseek/deepseek-v4-flash-0731";
-const DEFAULT_DIRECT_MODEL = "deepseek-v4-flash";
+export const AI_PROMPT_VERSION = "emotion-support-v2-vision";
+export const DEFAULT_GATEWAY_MODEL = "deepseek/deepseek-v4-pro";
+export const DEFAULT_GATEWAY_IMAGE_MODEL = "deepseek/deepseek-v4-flash-vision-exp";
+const DEFAULT_DIRECT_MODEL = "deepseek-v4-pro";
+const DEFAULT_DIRECT_IMAGE_MODEL = "deepseek-v4-flash-vision-exp";
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_CONTEXT_CHARACTERS = 6000;
 
@@ -204,13 +207,53 @@ function createAiClient() {
         maxRetries: 1,
       }),
       model: readEnv("DEEPSEEK_MODEL") || DEFAULT_DIRECT_MODEL,
+      imageFallbackModel: readEnv("DEEPSEEK_IMAGE_MODEL") || DEFAULT_DIRECT_IMAGE_MODEL,
     };
   }
 
   return {
     client: new OpenAI({ timeout: 20_000, maxRetries: 1 }),
     model: readEnv("AI_EMOTION_MODEL") || DEFAULT_GATEWAY_MODEL,
+    imageFallbackModel: readEnv("AI_IMAGE_MODEL") || DEFAULT_GATEWAY_IMAGE_MODEL,
   };
+}
+
+export function isUnsupportedImageError(error) {
+  const message = String(error?.error?.message ?? error?.message ?? "").toLowerCase();
+  return (error?.status === 400 || error?.status === 404)
+    && (message.includes("image") || message.includes("vision") || message.includes("multimodal"));
+}
+
+async function loadSourceImage(conversationId, sourceMessageId) {
+  const { rows } = await getDb().pool.query(
+    `SELECT storage_key, content_type
+       FROM conversation_attachments
+      WHERE conversation_id = $1 AND message_id = $2
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1`,
+    [conversationId, sourceMessageId],
+  );
+  if (!rows[0]) return null;
+  const data = await readPrivateImage(rows[0].storage_key, "arrayBuffer");
+  if (!data) return null;
+  return {
+    contentType: rows[0].content_type,
+    dataUrl: `data:${rows[0].content_type};base64,${Buffer.from(data).toString("base64")}`,
+  };
+}
+
+function userContentForAnalysis(contextText, sourceImage) {
+  if (!sourceImage) return contextText;
+  return [
+    {
+      type: "text",
+      text: `${contextText}\n\n最新一条倾诉附有一张图片。只分析图片中与对方当前感受和求助语境直接相关的可见线索，不识别身份，不猜测年龄、性别、疾病或其他敏感属性。`,
+    },
+    {
+      type: "image_url",
+      image_url: { url: sourceImage.dataUrl, detail: "low" },
+    },
+  ];
 }
 
 function errorCodeFor(error) {
@@ -241,20 +284,32 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
         ORDER BY created_at ASC, id ASC`,
       [conversationId],
     );
-    const { client, model } = createAiClient();
-    const completion = await client.chat.completions.create({
-      model,
+    const sourceImage = await loadSourceImage(conversationId, sourceMessageId);
+    const { client, model, imageFallbackModel } = createAiClient();
+    const request = {
       temperature: 0.2,
       max_tokens: 800,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `你是匿名心理倾诉网站的倾听辅助工具，不是医生，也不能进行诊断。请根据对话中的文字线索帮助人工倾听员更温柔地回应。\n\n要求：\n1. 只描述“可能的感受”和“可能的需要”，不使用抑郁症、焦虑症等疾病诊断。\n2. 不自动替人作决定，不承诺保密、治愈或绝对安全。\n3. 建议语言自然、简短、非评判，先回应感受，再提出至多两个开放式问题。\n4. 不复述姓名、地址、联系方式等可识别信息，不逐字引用敏感内容。\n5. safetyLevel 只能是 normal、watch、urgent。出现自伤、自杀、伤害他人或立即危险线索时使用 urgent；信息含糊但需要尽快人工确认时使用 watch。\n6. 只输出合法 json，不要 markdown。\n\nJSON 格式：{"primaryEmotion":"","secondaryEmotions":[],"intensity":0,"currentNeed":"","observation":"","suggestedOpening":"","followUpQuestions":[],"avoidPhrases":[],"safetyLevel":"normal","safetyReasons":[],"confidence":0.5}`,
+          content: `你是匿名心理倾诉网站的倾听辅助工具，不是医生，也不能进行诊断。请根据对话中的文字和用户主动分享的图片线索，帮助人工倾听员更温柔地回应。\n\n要求：\n1. 只描述“可能的感受”和“可能的需要”，不使用抑郁症、焦虑症等疾病诊断。\n2. 不自动替人作决定，不承诺保密、治愈或绝对安全。\n3. 建议语言自然、简短、非评判，先回应感受，再提出至多两个开放式问题。\n4. 不复述姓名、地址、联系方式等可识别信息，不做人脸识别，不推断年龄、性别、民族、健康状况等敏感属性。\n5. 图片只作为语境线索；看不清或无法确定时明确保持谨慎，不编造画面内容。\n6. safetyLevel 只能是 normal、watch、urgent。出现自伤、自杀、伤害他人或立即危险线索时使用 urgent；信息含糊但需要尽快人工确认时使用 watch。\n7. 只输出合法 json，不要 markdown。\n\nJSON 格式：{"primaryEmotion":"","secondaryEmotions":[],"intensity":0,"currentNeed":"","observation":"","suggestedOpening":"","followUpQuestions":[],"avoidPhrases":[],"safetyLevel":"normal","safetyReasons":[],"confidence":0.5}`,
         },
-        { role: "user", content: buildContext(source.topic, source.need, messages) },
+        {
+          role: "user",
+          content: userContentForAnalysis(buildContext(source.topic, source.need, messages), sourceImage),
+        },
       ],
-    });
+    };
+    let usedModel = model;
+    let completion;
+    try {
+      completion = await client.chat.completions.create({ ...request, model });
+    } catch (error) {
+      if (!sourceImage || !imageFallbackModel || imageFallbackModel === model || !isUnsupportedImageError(error)) throw error;
+      usedModel = imageFallbackModel;
+      completion = await client.chat.completions.create({ ...request, model: imageFallbackModel });
+    }
     const raw = completion.choices[0]?.message?.content;
     if (!raw) throw new SyntaxError("empty model response");
     const analysis = normalizeAiResult(JSON.parse(raw), source.body);
@@ -280,7 +335,7 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
         analysis.safetyLevel,
         JSON.stringify(analysis.safetyReasons),
         analysis.confidence,
-        model,
+        usedModel,
         sourceMessageId,
         AI_PROMPT_VERSION,
       ],

@@ -80,6 +80,39 @@ const statusLabels = {
   closed: "已经结束",
 };
 
+const MAX_CHAT_IMAGE_SIZE = 4 * 1024 * 1024;
+
+function validateChatImage(file) {
+  if (!file) return "";
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return "只支持 JPG、PNG 或 WebP 图片。";
+  if (file.size > MAX_CHAT_IMAGE_SIZE) return "图片不能超过 4 MB。";
+  return "";
+}
+
+function MessageContent({ message }) {
+  return (
+    <div className={`message-bubble ${message.attachments?.length ? "has-image" : ""}`}>
+      {message.attachments?.map((attachment) => (
+        <a className="message-image-link" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id} aria-label="查看对话图片原图">
+          <img src={attachment.url} alt="对话中发送的图片" loading="lazy" decoding="async" />
+        </a>
+      ))}
+      {message.body && <p className="message-body">{message.body}</p>}
+    </div>
+  );
+}
+
+function ComposerImagePreview({ file, previewUrl, onClear }) {
+  if (!file || !previewUrl) return null;
+  return (
+    <div className="composer-image-preview">
+      <img src={previewUrl} alt="待发送图片预览" />
+      <div><strong>图片已准备好</strong><span>{(file.size / 1024 / 1024).toFixed(2)} MB · 发送前仍可移除</span></div>
+      <button type="button" onClick={onClear} aria-label="移除待发送图片"><XCircle size={20} /></button>
+    </div>
+  );
+}
+
 function Brand({ compact = false }) {
   return (
     <Link className="brand" to="/" aria-label="奶油云朵信箱首页">
@@ -728,12 +761,24 @@ function ChatPage() {
   const { conversations, loading, error, refresh } = useConversations();
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [aiSettingBusy, setAiSettingBusy] = useState(false);
   const messageEndRef = useRef(null);
   const conversation = conversations.find((item) => item.id === id);
+
+  useEffect(() => {
+    if (!image) {
+      setImagePreview("");
+      return undefined;
+    }
+    const url = URL.createObjectURL(image);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -752,8 +797,9 @@ function ChatPage() {
     setBusy(true);
     setActionError("");
     try {
-      await sendMessage(conversation.id, session.role, draft);
+      await sendMessage(conversation.id, session.role, draft, image);
       setDraft("");
+      setImage(null);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "消息发送失败，请稍后再试。");
     } finally {
@@ -788,10 +834,22 @@ function ChatPage() {
   }
 
   function handleComposerKeyDown(event) {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && draft.trim() && !busy) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && (draft.trim() || image) && !busy) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
+  }
+
+  function selectImage(event) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    const validationError = validateChatImage(file);
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
+    setActionError("");
+    setImage(file);
   }
 
   return (
@@ -824,7 +882,7 @@ function ChatPage() {
                 {group.messages.map((message) => (
                   <div className={`message-row message-${message.sender} ${getMessagePerspectiveClass(message.sender, session.role)}`} key={message.id}>
                     <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "倾听员" : conversation.alias}</span>
-                    <div className="message-bubble">{message.body}</div>
+                    <MessageContent message={message} />
                     <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
                   </div>
                 ))}
@@ -837,11 +895,13 @@ function ChatPage() {
           ) : (
             <form className="composer" onSubmit={submit}>
               <label htmlFor="message-input">{session.role === "admin" ? "写下温柔回应" : "把想说的话放在这里"}</label>
+              <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => setImage(null)} />
               <div>
                 <textarea id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={session.role === "admin" ? "先接住感受，再慢慢回应…" : "不需要组织得很完整，慢慢说就好…"} rows="3" />
-                <button className="send-button" type="submit" disabled={busy || !draft.trim()} aria-label={busy ? "正在发送消息" : "发送消息"}><PaperPlaneTilt size={22} weight="fill" /></button>
+                <label className="image-picker" aria-label="选择一张图片"><PlusCircle size={22} /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectImage} /></label>
+                <button className="send-button" type="submit" disabled={busy || (!draft.trim() && !image)} aria-label={busy ? "正在发送消息" : "发送消息"}><PaperPlaneTilt size={22} weight="fill" /></button>
               </div>
-              <span><LockKey size={15} /> 请避免发送姓名、地址、身份证号等可识别信息 · Ctrl / ⌘ + Enter 发送</span>
+              <span><LockKey size={15} /> 图片仅对本次会话双方可见；开启 AI 后，倾诉者发送的图片会用于辅助分析 · Ctrl / ⌘ + Enter 发送</span>
               {actionError && <div className="form-message error" role="alert"><WarningCircle size={18} /> {actionError}</div>}
             </form>
           )}
@@ -951,6 +1011,8 @@ function AdminDashboard() {
   const [selectedId, setSelectedId] = useState(() => conversations[0]?.id ?? null);
   const [filter, setFilter] = useState("all");
   const [draft, setDraft] = useState("");
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -966,6 +1028,16 @@ function AdminDashboard() {
   const closedCount = conversations.filter((conversation) => conversation.status === "closed").length;
 
   useEffect(() => {
+    if (!image) {
+      setImagePreview("");
+      return undefined;
+    }
+    const url = URL.createObjectURL(image);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
+  useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
@@ -975,14 +1047,17 @@ function AdminDashboard() {
 
   useEffect(() => setAiPanelOpen(false), [selected?.id]);
 
+  useEffect(() => setImage(null), [selected?.id]);
+
   async function reply(event) {
     event.preventDefault();
     if (!selected) return;
     setBusy(true);
     setActionError("");
     try {
-      await sendMessage(selected.id, "admin", draft);
+      await sendMessage(selected.id, "admin", draft, image);
       setDraft("");
+      setImage(null);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "回复发送失败，请稍后再试。");
     } finally {
@@ -991,10 +1066,22 @@ function AdminDashboard() {
   }
 
   function handleReplyKeyDown(event) {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && draft.trim() && !busy) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && (draft.trim() || image) && !busy) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
+  }
+
+  function selectReplyImage(event) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    const validationError = validateChatImage(file);
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
+    setActionError("");
+    setImage(file);
   }
 
   async function retrySelectedAnalysis() {
@@ -1031,7 +1118,7 @@ function AdminDashboard() {
               return (
                 <button className={conversation.id === selected?.id ? "selected" : ""} type="button" key={conversation.id} onClick={() => setSelectedId(conversation.id)}>
                   <span className="list-avatar"><Cloud size={24} weight="duotone" /></span>
-                  <span className="row-copy"><strong>{conversation.alias}</strong><small>{lastMessage?.body}</small></span>
+                  <span className="row-copy"><strong>{conversation.alias}</strong><small>{lastMessage?.body || (lastMessage?.attachments?.length ? "[图片]" : "")}</small></span>
                   <span className="row-meta"><time dateTime={conversation.updatedAt}>{formatListTime(conversation.updatedAt)}</time><i className={`status-dot status-${conversation.status}`} /></span>
                 </button>
               );
@@ -1058,7 +1145,7 @@ function AdminDashboard() {
                     {group.messages.map((message) => (
                       <div className={`message-row message-${message.sender} ${getMessagePerspectiveClass(message.sender, "admin")}`} key={message.id}>
                         <span className="message-sender">{message.sender === "system" ? "信箱提醒" : message.sender === "admin" ? "我" : selected.alias}</span>
-                        <div className="message-bubble">{message.body}</div>
+                        <MessageContent message={message} />
                         <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
                       </div>
                     ))}
@@ -1070,9 +1157,10 @@ function AdminDashboard() {
                 <div className="conversation-closed-note compact"><CheckCircle size={22} weight="duotone" /><div><strong>这段会话已结束</strong><span>记录保留为只读，不能继续回复。</span></div></div>
               ) : (
                 <form className="admin-composer" onSubmit={reply}>
+                  <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => setImage(null)} />
                   <textarea aria-label="回复内容" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleReplyKeyDown} rows="3" placeholder="先接住情绪，再慢慢回应…" />
                   {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
-                  <div><span><ShieldCheck size={17} /> 不诊断、不评判 · Ctrl / ⌘ + Enter 发送</span><button className="button button-primary" disabled={busy || !draft.trim()} type="submit">{busy ? "发送中…" : "发送回复"} <PaperPlaneTilt size={18} weight="fill" /></button></div>
+                  <div><span><ShieldCheck size={17} /> 不诊断、不评判 · 图片仅会话双方可见</span><span className="admin-composer-actions"><label className="button button-secondary compact-button image-action"><PlusCircle size={17} /> 添加图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectReplyImage} /></label><button className="button button-primary" disabled={busy || (!draft.trim() && !image)} type="submit">{busy ? "发送中…" : "发送回复"} <PaperPlaneTilt size={18} weight="fill" /></button></span></div>
                 </form>
               )}
             </>

@@ -11,8 +11,10 @@ import {
 import {
   handleError,
   json,
+  loadMessages,
   methodNotAllowed,
   parseJson,
+  attachPublicAttachments,
   requireActor,
   requireSameOrigin,
 } from "./_lib/chat-server.mjs";
@@ -35,8 +37,13 @@ async function listConversations(actor) {
     "SELECT id, conversation_id, sender, body, created_at FROM conversation_messages WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at ASC, id ASC",
     [ids],
   );
+  const { rows: attachments } = await db.pool.query(
+    "SELECT id, conversation_id, message_id, content_type, size_bytes FROM conversation_attachments WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at ASC, id ASC",
+    [ids],
+  );
+  const messagesWithAttachments = attachPublicAttachments(messages, attachments);
   const grouped = new Map();
-  for (const message of messages) {
+  for (const message of messagesWithAttachments) {
     const items = grouped.get(message.conversation_id) ?? [];
     items.push(message);
     grouped.set(message.conversation_id, items);
@@ -71,12 +78,8 @@ async function createConversation(actor, request) {
       [actor.id],
     );
     if (existing.rows[0]) {
-      const messages = await client.query(
-        "SELECT id, sender, body, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
-        [existing.rows[0].id],
-      );
       await client.query("COMMIT");
-      return toConversation(existing.rows[0], messages.rows);
+      return toConversation(existing.rows[0], await loadMessages(existing.rows[0].id));
     }
 
     const id = crypto.randomUUID();
@@ -99,11 +102,7 @@ async function createConversation(actor, request) {
         [actor.id],
       );
       if (rows[0]) {
-        const messages = await db.pool.query(
-          "SELECT id, sender, body, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
-          [rows[0].id],
-        );
-        return toConversation(rows[0], messages.rows);
+        return toConversation(rows[0], await loadMessages(rows[0].id));
       }
     }
     throw error;

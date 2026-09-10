@@ -17,6 +17,12 @@ export function requiredText(value, fieldName, maxLength) {
   return text;
 }
 
+export function optionalText(value, fieldName, maxLength) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length > maxLength) throw new HttpError(400, `${fieldName}不能超过 ${maxLength} 个字符。`);
+  return text;
+}
+
 export function canAccessConversation(actor, conversation) {
   return actor.role === "admin" || conversation.client_id === actor.id;
 }
@@ -35,6 +41,7 @@ export function toConversation(row, messages = [], aiAnalysis = null) {
       id: message.id,
       sender: message.sender,
       body: message.body,
+      attachments: Array.isArray(message.attachments) ? message.attachments : [],
       createdAt: new Date(message.created_at).toISOString(),
     })),
   };

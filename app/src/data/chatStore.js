@@ -4,6 +4,8 @@ import { authMode } from "../auth/authService.js";
 const CHAT_KEY = "cloudmail.demo.conversations";
 const CHAT_EVENT = "cloudmail:chat-updated";
 const API_ROOT = "/api/conversations";
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const seedConversations = [
   {
@@ -72,17 +74,34 @@ function writeLocalConversations(conversations) {
 }
 
 async function apiRequest(path = "", options = {}) {
+  const isMultipart = options.body instanceof FormData;
   const response = await fetch(`${API_ROOT}${path}`, {
     credentials: "same-origin",
     ...options,
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !isMultipart ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     },
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "对话服务暂时不可用，请稍后再试。");
   return payload;
+}
+
+function validateSelectedImage(image) {
+  if (!image) return;
+  if (!ALLOWED_IMAGE_TYPES.has(image.type)) throw new Error("只支持 JPG、PNG 或 WebP 图片。");
+  if (image.size > MAX_IMAGE_SIZE) throw new Error("图片不能超过 4 MB。");
+}
+
+async function imageToDataUrl(image) {
+  const bytes = new Uint8Array(await image.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return `data:${image.type};base64,${window.btoa(binary)}`;
 }
 
 async function loadApiConversations() {
@@ -190,20 +209,33 @@ export async function createConversation(session, { topic, need, aiConsent = fal
   return conversation;
 }
 
-export async function sendMessage(conversationId, sender, body) {
+export async function sendMessage(conversationId, sender, body, image = null) {
   const text = body.trim();
-  if (!text) return null;
+  if (!text && !image) return null;
+  validateSelectedImage(image);
   if (authMode === "netlify") {
-    const { conversation } = await apiRequest(`/${conversationId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ body: text }),
-    });
+    let requestBody;
+    if (image) {
+      requestBody = new FormData();
+      requestBody.append("body", text);
+      requestBody.append("image", image);
+    } else {
+      requestBody = JSON.stringify({ body: text });
+    }
+    const { conversation } = await apiRequest(`/${conversationId}/messages`, { method: "POST", body: requestBody });
     apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
     notifyApiUpdated();
     return conversation;
   }
 
   const now = new Date().toISOString();
+  const attachment = image ? {
+    id: crypto.randomUUID(),
+    kind: "image",
+    contentType: image.type,
+    size: image.size,
+    url: await imageToDataUrl(image),
+  } : null;
   const conversations = readLocalConversations().map((conversation) => {
     if (conversation.id !== conversationId) return conversation;
     const messageId = crypto.randomUUID();
@@ -213,10 +245,10 @@ export async function sendMessage(conversationId, sender, body) {
       updatedAt: now,
       messages: [
         ...conversation.messages,
-        { id: messageId, sender, body: text, createdAt: now },
+        { id: messageId, sender, body: text, attachments: attachment ? [attachment] : [], createdAt: now },
       ],
       ...(sender === "client" && conversation.aiAssistanceEnabled
-        ? { aiAnalysis: createDemoAnalysis(text, messageId, now) }
+        ? { aiAnalysis: createDemoAnalysis(text, messageId, now, Boolean(attachment)) }
         : {}),
     };
   });
@@ -224,7 +256,7 @@ export async function sendMessage(conversationId, sender, body) {
   return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }
 
-function createDemoAnalysis(body, sourceMessageId, now) {
+function createDemoAnalysis(body, sourceMessageId, now, hasImage = false) {
   const urgent = /不想活|想死|自杀|伤害自己|自残|割腕|跳楼|吞药/u.test(body);
   const anxious = /焦虑|担心|害怕|紧张|睡不着/u.test(body);
   const angry = /生气|愤怒|气死|讨厌/u.test(body);
@@ -238,7 +270,9 @@ function createDemoAnalysis(body, sourceMessageId, now) {
     secondaryEmotions: [],
     intensity: urgent ? 3 : 2,
     currentNeed: urgent ? "立即获得人工关注与安全确认" : "先被认真倾听",
-    observation: "这是本地演示中的辅助提示，线上版本会使用服务端模型结合最近对话分析。",
+    observation: hasImage
+      ? "这条消息包含图片。本地演示不读取画面内容，线上版本会在授权后由视觉模型谨慎分析。"
+      : "这是本地演示中的辅助提示，线上版本会使用服务端模型结合最近对话分析。",
     suggestedOpening: urgent
       ? "谢谢你告诉我这些。我很在意你现在的安全，我们先确认一下：你此刻是否正面临立即危险？"
       : "谢谢你愿意说出来。我在这里，我们可以慢慢聊。",
@@ -267,7 +301,12 @@ export async function retryAiAnalysis(conversationId) {
   const conversation = conversations.find((item) => item.id === conversationId);
   const lastClientMessage = conversation?.messages.filter((message) => message.sender === "client").at(-1);
   if (!conversation?.aiAssistanceEnabled || !lastClientMessage) return null;
-  const analysis = createDemoAnalysis(lastClientMessage.body, lastClientMessage.id, new Date().toISOString());
+  const analysis = createDemoAnalysis(
+    lastClientMessage.body,
+    lastClientMessage.id,
+    new Date().toISOString(),
+    Boolean(lastClientMessage.attachments?.length),
+  );
   writeLocalConversations(conversations.map((item) =>
     item.id === conversationId ? { ...item, aiAnalysis: analysis } : item,
   ));

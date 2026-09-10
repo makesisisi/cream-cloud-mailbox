@@ -2,6 +2,7 @@ import { getDatabase } from "@netlify/database";
 import { getUser, verifyRequestOrigin } from "@netlify/identity";
 import { canAccessConversation, HttpError, toConversation } from "./chat-domain.mjs";
 import { loadLatestAiAnalysis } from "./ai-assistant.mjs";
+import { toPublicAttachment } from "./chat-attachments.mjs";
 
 const db = getDatabase();
 
@@ -49,11 +50,28 @@ export function requireAdmin(actor) {
 }
 
 export async function loadMessages(conversationId) {
-  const { rows } = await db.pool.query(
+  const { rows: messages } = await db.pool.query(
     "SELECT id, sender, body, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
     [conversationId],
   );
-  return rows;
+  const { rows: attachments } = await db.pool.query(
+    "SELECT id, conversation_id, message_id, content_type, size_bytes FROM conversation_attachments WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
+    [conversationId],
+  );
+  return attachPublicAttachments(messages, attachments);
+}
+
+export function attachPublicAttachments(messages, attachments) {
+  const grouped = new Map();
+  for (const attachment of attachments) {
+    const items = grouped.get(attachment.message_id) ?? [];
+    items.push(toPublicAttachment(attachment));
+    grouped.set(attachment.message_id, items);
+  }
+  return messages.map((message) => ({
+    ...message,
+    attachments: grouped.get(message.id) ?? [],
+  }));
 }
 
 export async function loadConversation(actor, id) {

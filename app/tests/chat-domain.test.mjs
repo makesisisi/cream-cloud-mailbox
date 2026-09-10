@@ -4,6 +4,7 @@ import {
   canAccessConversation,
   createAlias,
   HttpError,
+  optionalText,
   requiredText,
   toConversation,
 } from "../netlify/functions/_lib/chat-domain.mjs";
@@ -39,6 +40,12 @@ test("text validation trims values and rejects empty or oversized input", () => 
   assert.equal(requiredText("  hello  ", "消息", 10), "hello");
   assert.throws(() => requiredText("   ", "消息", 10), HttpError);
   assert.throws(() => requiredText("123456", "消息", 5), /不能超过 5/);
+});
+
+test("optional message text allows an image-only message but still enforces the limit", () => {
+  assert.equal(optionalText("   ", "消息", 10), "");
+  assert.equal(optionalText("  hello  ", "消息", 10), "hello");
+  assert.throws(() => optionalText("123456", "消息", 5), /不能超过 5/);
 });
 
 test("server generated aliases use a non-identifying six digit suffix", () => {
