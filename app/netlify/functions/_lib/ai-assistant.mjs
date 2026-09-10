@@ -1,6 +1,7 @@
 import { getDatabase } from "@netlify/database";
 import OpenAI from "openai";
 import { readPrivateImage } from "./chat-attachments.mjs";
+import { prepareAiImage } from "./ai-image.mjs";
 
 let database;
 
@@ -10,9 +11,9 @@ function getDb() {
 }
 
 export const AI_PROMPT_VERSION = "emotion-support-v2-vision";
-export const DEFAULT_GATEWAY_MODEL = "deepseek/deepseek-v4-pro";
+export const DEFAULT_GATEWAY_MODEL = "deepseek/deepseek-v4-flash";
 export const DEFAULT_GATEWAY_IMAGE_MODEL = "deepseek/deepseek-v4-flash-vision-exp";
-const DEFAULT_DIRECT_MODEL = "deepseek-v4-pro";
+const DEFAULT_DIRECT_MODEL = "deepseek-v4-flash";
 const DEFAULT_DIRECT_IMAGE_MODEL = "deepseek-v4-flash-vision-exp";
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_CONTEXT_CHARACTERS = 6000;
@@ -218,12 +219,6 @@ function createAiClient() {
   };
 }
 
-export function isUnsupportedImageError(error) {
-  const message = String(error?.error?.message ?? error?.message ?? "").toLowerCase();
-  return (error?.status === 400 || error?.status === 404)
-    && (message.includes("image") || message.includes("vision") || message.includes("multimodal"));
-}
-
 async function loadSourceImage(conversationId, sourceMessageId) {
   const { rows } = await getDb().pool.query(
     `SELECT storage_key, content_type
@@ -236,10 +231,7 @@ async function loadSourceImage(conversationId, sourceMessageId) {
   if (!rows[0]) return null;
   const data = await readPrivateImage(rows[0].storage_key, "arrayBuffer");
   if (!data) return null;
-  return {
-    contentType: rows[0].content_type,
-    dataUrl: `data:${rows[0].content_type};base64,${Buffer.from(data).toString("base64")}`,
-  };
+  return prepareAiImage(data);
 }
 
 function userContentForAnalysis(contextText, sourceImage) {
@@ -301,15 +293,8 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
         },
       ],
     };
-    let usedModel = model;
-    let completion;
-    try {
-      completion = await client.chat.completions.create({ ...request, model });
-    } catch (error) {
-      if (!sourceImage || !imageFallbackModel || imageFallbackModel === model || !isUnsupportedImageError(error)) throw error;
-      usedModel = imageFallbackModel;
-      completion = await client.chat.completions.create({ ...request, model: imageFallbackModel });
-    }
+    const usedModel = sourceImage && imageFallbackModel ? imageFallbackModel : model;
+    const completion = await client.chat.completions.create({ ...request, model: usedModel });
     const raw = completion.choices[0]?.message?.content;
     if (!raw) throw new SyntaxError("empty model response");
     const analysis = normalizeAiResult(JSON.parse(raw), source.body);
@@ -349,7 +334,13 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
         WHERE source_message_id = $2 AND prompt_version = $3`,
       [errorCode, sourceMessageId, AI_PROMPT_VERSION],
     );
-    console.error("ai-analysis-error", { conversationId, sourceMessageId, errorCode });
+    console.error("ai-analysis-error", {
+      conversationId,
+      sourceMessageId,
+      errorCode,
+      providerStatus: error?.status ?? null,
+      providerCode: error?.code ?? error?.error?.code ?? null,
+    });
     return null;
   }
 }

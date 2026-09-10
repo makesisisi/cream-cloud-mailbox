@@ -4,7 +4,6 @@ import {
   DEFAULT_GATEWAY_IMAGE_MODEL,
   DEFAULT_GATEWAY_MODEL,
   detectUrgentSafety,
-  isUnsupportedImageError,
   normalizeAiResult,
 } from "../netlify/functions/_lib/ai-assistant.mjs";
 
@@ -38,13 +37,7 @@ test("ordinary distress is not automatically marked urgent", () => {
   assert.equal(detectUrgentSafety("最近考试压力很大，也总是睡不好"), false);
 });
 
-test("routes text through the V4 Pro alias and keeps a documented vision fallback", () => {
-  assert.equal(DEFAULT_GATEWAY_MODEL, "deepseek/deepseek-v4-pro");
+test("routes text through V4 Flash and image messages through the vision model", () => {
+  assert.equal(DEFAULT_GATEWAY_MODEL, "deepseek/deepseek-v4-flash");
   assert.equal(DEFAULT_GATEWAY_IMAGE_MODEL, "deepseek/deepseek-v4-flash-vision-exp");
-});
-
-test("only retries image capability errors on the vision fallback", () => {
-  assert.equal(isUnsupportedImageError({ status: 400, message: "This model does not support image" }), true);
-  assert.equal(isUnsupportedImageError({ status: 429, message: "rate limited" }), false);
-  assert.equal(isUnsupportedImageError({ status: 400, message: "invalid json" }), false);
 });

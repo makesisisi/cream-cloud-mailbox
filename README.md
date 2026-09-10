@@ -17,7 +17,9 @@
 - 用户端与管理员端每 10 秒自动刷新一次，也会在发送消息和重新切回页面时刷新。
 - 会话双方可以发送 JPG、PNG、WebP 图片（每张不超过 4 MB）。图片保存在私有 Blobs 中，读取接口会再次校验会话权限，不生成公开地址。
 - 倾诉者开启 AI 辅助后，最新一条倾诉中的图片会与最近对话一起交给服务端模型分析；关闭授权时正常图片聊天仍然可用。
-- 文本分析默认请求 `deepseek-v4-pro`（DeepSeek 在 V4.1 过渡期将其路由到 V4.1 Flash）；如该入口尚未接受图片，服务端自动回退到官方文档明确支持图像的 `deepseek-v4-flash-vision-exp`。
+- 文本分析默认使用 V4 Flash；图片消息直接使用 `deepseek-v4-flash-vision-exp`。服务端将 AI 图片预览缩至最长边 768 像素、最多 48 KiB，保留聊天原图，避免网关请求大小超限。
+
+Windows 本地发布时，先执行 `npm --prefix app install --os=linux --cpu=x64 --libc=glibc --include=optional --ignore-scripts`，再执行 `netlify deploy --prod`，确保 Sharp 的 Linux 原生组件进入函数包。发布后执行 `npm --prefix app install --include=optional --ignore-scripts` 恢复 Windows 本地依赖。Netlify 云端 Linux 构建会自动安装对应组件。
 - Identity 邀请链接会打开站内密码设置页，使用 `acceptInvite` 完成账号启用后再按角色进入工作台。
 - Product Design 的 Sites 运行时文件保留在 `app/.openai`、`app/worker` 和 `app/scripts`，后续可以继续交给 Sites 发布。
 
