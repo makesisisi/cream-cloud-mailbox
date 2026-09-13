@@ -1231,8 +1231,48 @@ function HashScroll() {
   return null;
 }
 
+function MotionReveals() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    let observer;
+    const frame = window.requestAnimationFrame(() => {
+      const targets = document.querySelectorAll([
+        ".trust-strip > *",
+        ".tips-section > .section-heading",
+        ".tip-grid > *",
+        ".content-page > .section-heading",
+        ".about-page > *",
+        ".privacy-grid > *",
+        ".dashboard-layout > *",
+        ".safety-note",
+        ".site-footer > *",
+      ].join(","));
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0.08, rootMargin: "0px 0px -28px" });
+      targets.forEach((target, index) => {
+        target.classList.add("motion-reveal");
+        target.style.setProperty("--reveal-order", String(index % 4));
+        observer.observe(target);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [pathname]);
+  return null;
+}
+
 function AppRoutes() {
   const { authCallback, authError, clearAuthError, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在确认邀请…</div>;
   if (authCallback?.type === "invite" && authCallback.token) {
     return <InviteAcceptPage token={authCallback.token} />;
@@ -1243,7 +1283,9 @@ function AppRoutes() {
   return (
     <>
       <HashScroll />
-      <Routes>
+      <MotionReveals />
+      <div className="route-stage" key={location.pathname}>
+      <Routes location={location}>
         <Route path="/" element={<HomePage />} />
         <Route path="/tips" element={<TipsPage />} />
         <Route path="/about" element={<AboutPage />} />
@@ -1255,6 +1297,7 @@ function AppRoutes() {
         <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </div>
     </>
   );
 }
