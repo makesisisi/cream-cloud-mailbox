@@ -4,7 +4,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
   const base = process.env.UX_BASE_URL || 'http://127.0.0.1:5180';
   await page.goto(base);
   await page.evaluate(() => localStorage.setItem('cloudmail.demo.session', JSON.stringify({ id: 'demo-admin', role: 'admin', displayName: '管理员' })));
@@ -26,7 +26,7 @@ try {
   assert.equal(await page.locator('.full-chat-ai').getAttribute('open'), null);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => {
-    const conversation = { id: 'conv-demo-1', clientId: 'demo-client', alias: '测试云朵', status: 'waiting', messages: Array.from({ length: 40 }, (_, index) => ({ id: `m-${index}`, sender: 'client', body: `历史消息 ${index}`, createdAt: new Date().toISOString() })) };
+    const conversation = { id: 'conv-demo-1', clientId: 'demo-client', alias: '测试云朵', topic: '测试主题', need: '倾听', updatedAt: new Date().toISOString(), status: 'waiting', messages: Array.from({ length: 40 }, (_, index) => ({ id: `m-${index}`, sender: 'client', body: `历史消息 ${index}`, createdAt: new Date().toISOString() })) };
     localStorage.setItem('cloudmail.demo.conversations', JSON.stringify([conversation, { ...conversation, id: 'conv-other', messages: [] }]));
     window.dispatchEvent(new Event('cloudmail:chat-updated'));
   });
