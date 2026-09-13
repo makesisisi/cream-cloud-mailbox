@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const base = process.env.UX_BASE_URL || 'http://127.0.0.1:5180';
+  await page.goto(base);
+  await page.evaluate(() => localStorage.setItem('cloudmail.demo.session', JSON.stringify({ id: 'demo-admin', role: 'admin', displayName: '管理员' })));
+  await page.goto(`${base}/chat/conv-demo-1`);
+  await page.locator('#message-input').waitFor();
+  assert.equal(await page.locator('.full-chat-ai').count(), 1);
+  await page.locator('#message-input').fill('草稿测试');
+  await page.goto(`${base}/admin`);
+  assert.equal(await page.locator('textarea').inputValue(), '草稿测试');
+  await page.goto(`${base}/chat/conv-demo-1`);
+  await page.locator('#message-input').waitFor();
+  await page.getByRole('button', { name: '放入回复框' }).click();
+  assert.ok((await page.locator('#message-input').inputValue()).startsWith('草稿测试\n\n'));
+  await page.screenshot({ path: 'qa-ux-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'qa-ux-mobile.png', fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.locator('.full-chat-ai summary').click();
+  assert.equal(await page.locator('.full-chat-ai').getAttribute('open'), null);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    const conversation = { id: 'conv-demo-1', clientId: 'demo-client', alias: '测试云朵', status: 'waiting', messages: Array.from({ length: 40 }, (_, index) => ({ id: `m-${index}`, sender: 'client', body: `历史消息 ${index}`, createdAt: new Date().toISOString() })) };
+    localStorage.setItem('cloudmail.demo.conversations', JSON.stringify([conversation, { ...conversation, id: 'conv-other', messages: [] }]));
+    window.dispatchEvent(new Event('cloudmail:chat-updated'));
+  });
+  await page.locator('.message-row').nth(39).waitFor();
+  await page.locator('.message-list').evaluate(box => { box.scrollTop = 0; box.dispatchEvent(new Event('scroll', { bubbles: true })); });
+  await page.evaluate(() => {
+    const data = JSON.parse(localStorage.getItem('cloudmail.demo.conversations'));
+    data[0].messages.push({ id: 'new-message', sender: 'client', body: '新消息', createdAt: new Date().toISOString() });
+    localStorage.setItem('cloudmail.demo.conversations', JSON.stringify(data));
+    window.dispatchEvent(new Event('cloudmail:chat-updated'));
+  });
+  await page.locator('.new-messages-button').waitFor();
+  assert.equal(await page.locator('.message-list').evaluate(box => box.scrollTop), 0);
+  await page.locator('.new-messages-button').click();
+  assert.ok(await page.locator('.message-list').evaluate(box => box.scrollHeight - box.scrollTop - box.clientHeight < 5));
+  await page.goto(`${base}/chat/conv-other`);
+  assert.equal(await page.locator('#message-input').inputValue(), '');
+  await page.goto(`${base}/admin`);
+  await page.locator('.admin-messages').waitFor();
+  assert.ok(await page.locator('.admin-messages').evaluate(box => box.scrollHeight > box.clientHeight));
+  const composerBox = await page.locator('textarea').boundingBox();
+  assert.ok(composerBox.y + composerBox.height <= 900);
+  await page.evaluate(() => localStorage.setItem('cloudmail.demo.session', JSON.stringify({ id: 'demo-client', role: 'client', alias: '测试云朵' })));
+  await page.goto(`${base}/chat/conv-demo-1`);
+  await page.locator('#message-input').waitFor();
+  assert.equal(await page.locator('.full-chat-ai').count(), 0);
+  assert.deepEqual(errors, []);
+  console.log('PASS: admin AI, draft persistence/isolation, suggestion append, scroll preservation/jump, client visibility, mobile overflow, collapse, runtime errors');
+} finally { await browser.close(); }

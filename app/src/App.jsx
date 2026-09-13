@@ -36,6 +36,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext.jsx";
 import { demoAccounts } from "./auth/authService.js";
+import { useConversationDraft, useConversationScroll } from "./utils/conversationExperience.js";
 import {
   closeConversation,
   createConversation,
@@ -760,7 +761,7 @@ function ChatPage() {
   const { session } = useAuth();
   const { conversations, loading, error, refresh } = useConversations();
   const navigate = useNavigate();
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useConversationDraft(session.id, session.role, id);
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const [busy, setBusy] = useState(false);
@@ -769,6 +770,8 @@ function ChatPage() {
   const [aiSettingBusy, setAiSettingBusy] = useState(false);
   const messageEndRef = useRef(null);
   const conversation = conversations.find((item) => item.id === id);
+  const scrolling = useConversationScroll(id, conversation?.messages.length);
+  const [retryingAnalysis, setRetryingAnalysis] = useState(false);
 
   useEffect(() => {
     if (!image) {
@@ -780,9 +783,7 @@ function ChatPage() {
     return () => URL.revokeObjectURL(url);
   }, [image]);
 
-  useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [conversation?.messages.length]);
+  useEffect(() => { setImage(null); setActionError(""); }, [id]);
 
   if (loading) return <div className="screen-loader"><Cloud size={34} weight="duotone" /> 正在读取对话…</div>;
   if (error && !conversation) {
@@ -794,12 +795,14 @@ function ChatPage() {
 
   async function submit(event) {
     event.preventDefault();
+    if (busy || (!draft.trim() && !image)) return;
     setBusy(true);
     setActionError("");
     try {
       await sendMessage(conversation.id, session.role, draft, image);
       setDraft("");
       setImage(null);
+      scrolling.jump();
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "消息发送失败，请稍后再试。");
     } finally {
@@ -855,7 +858,7 @@ function ChatPage() {
   return (
     <div className="app-shell">
       <AppHeader title={session.role === "admin" ? `正在倾听 ${conversation.alias}` : "匿名倾诉"} subtitle={statusLabels[conversation.status]} identityName={session.role === "client" ? conversation.alias : undefined} />
-      <main className="chat-layout">
+      <main className={`chat-layout ${session.role === "admin" ? "admin-full-chat" : ""}`}>
         <aside className="chat-summary">
           <button className="back-link" type="button" onClick={() => navigate(session.role === "admin" ? "/admin" : "/app")}><House size={18} /> 返回工作台</button>
           <span className="avatar-cloud"><Cloud size={38} weight="duotone" /></span>
@@ -875,7 +878,7 @@ function ChatPage() {
           )}
         </aside>
         <section className="messenger" aria-label="匿名对话消息">
-          <div className="message-list">
+          <div className="message-list" ref={scrolling.ref} onScroll={scrolling.onScroll}>
             {groupMessagesByDate(conversation.messages).map((group) => (
               <div className="message-day-group" key={group.key}>
                 <div className="chat-day">{formatConversationDate(group.date)}</div>
@@ -890,15 +893,16 @@ function ChatPage() {
             ))}
             <span ref={messageEndRef} />
           </div>
+          {scrolling.unread && <button type="button" className="new-messages-button" onClick={scrolling.jump}>有新消息 · 回到最新位置 ↓</button>}
           {conversation.status === "closed" ? (
             <div className="conversation-closed-note"><CheckCircle size={22} weight="duotone" /><div><strong>这段会话已经结束</strong><span>你仍然可以查看完整记录，需要时可回到工作台创建新的倾诉。</span></div></div>
           ) : (
             <form className="composer" onSubmit={submit}>
               <label htmlFor="message-input">{session.role === "admin" ? "写下温柔回应" : "把想说的话放在这里"}</label>
-              <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => setImage(null)} />
+              <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => { if (!busy) setImage(null); }} />
               <div>
-                <textarea id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={session.role === "admin" ? "先接住感受，再慢慢回应…" : "不需要组织得很完整，慢慢说就好…"} rows="3" />
-                <label className="image-picker" aria-label="选择一张图片"><PlusCircle size={22} /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectImage} /></label>
+                <textarea disabled={busy} id="message-input" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={session.role === "admin" ? "先接住感受，再慢慢回应…" : "不需要组织得很完整，慢慢说就好…"} rows="3" />
+                <label className="image-picker" aria-label="选择一张图片"><PlusCircle size={22} /><input disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectImage} /></label>
                 <button className="send-button" type="submit" disabled={busy || (!draft.trim() && !image)} aria-label={busy ? "正在发送消息" : "发送消息"}><PaperPlaneTilt size={22} weight="fill" /></button>
               </div>
               <span><LockKey size={15} /> 图片仅对本次会话双方可见；开启 AI 后，倾诉者发送的图片会用于辅助分析 · Ctrl / ⌘ + Enter 发送</span>
@@ -906,6 +910,12 @@ function ChatPage() {
             </form>
           )}
         </section>
+        {session.role === "admin" && <details className="full-chat-ai" open>
+          <summary>✧ AI 辅助观察 · 展开 / 收起</summary>
+          <AiAssistantPanel replyDisabled={busy} conversation={conversation} retrying={retryingAnalysis}
+            onUseSuggestion={text => { setDraft(current => current.trim() ? `${current}\n\n${text}` : text); document.getElementById("message-input")?.focus(); }}
+            onRetry={async () => { if (retryingAnalysis) return; setRetryingAnalysis(true); setActionError(""); try { await retryAiAnalysis(id); } catch (reason) { setActionError(reason.message || "暂时无法重新分析。"); } finally { setRetryingAnalysis(false); } }} />
+        </details>}
       </main>
       {confirmingClose && (
         <div className="dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setConfirmingClose(false)}>
@@ -926,7 +936,7 @@ function ChatPage() {
 
 const intensityLabels = ["较平稳", "轻微", "较明显", "强烈"];
 
-function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = false, compact = false }) {
+function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = false, compact = false, replyDisabled = false }) {
   const analysis = conversation.aiAnalysis;
   const lastClientMessage = conversation.messages.filter((message) => message.sender === "client").at(-1);
   const stale = analysis?.status === "ready" && lastClientMessage && analysis.sourceMessageId !== lastClientMessage.id;
@@ -977,7 +987,8 @@ function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = f
         <span><Sparkle size={18} weight="fill" /> AI 辅助观察</span>
         <i className={`ai-state ${urgent ? "urgent" : watch ? "watch" : "ready"}`}>{urgent ? "立即复核" : watch ? "建议关注" : stale ? "待更新" : "已更新"}</i>
       </div>
-      {stale && <p className="ai-stale-note"><WarningCircle size={16} /> 当前提示对应较早消息，请等待最新分析。</p>}
+      {stale && <p className="ai-stale-note"><WarningCircle size={16} /> 当前提示对应较早消息。<button type="button" disabled={retrying} onClick={onRetry}>{retrying ? "正在重试…" : "重新分析"}</button></p>}
+      <p className="ai-source-time">对应消息：{formatTime(conversation.messages.find(message => message.id === analysis.sourceMessageId)?.createdAt || analysis.createdAt)}</p>
       <div className="ai-emotion-summary">
         <span>可能的感受</span>
         <strong>{analysis.primaryEmotion || "需要进一步倾听"}</strong>
@@ -997,7 +1008,7 @@ function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = f
       <div className="ai-suggestion">
         <span>建议先这样回应</span>
         <p>{analysis.suggestedOpening}</p>
-        <button type="button" onClick={() => onUseSuggestion(analysis.suggestedOpening)}>放入回复框</button>
+        <button type="button" disabled={replyDisabled || conversation.status === "closed"} onClick={() => onUseSuggestion(analysis.suggestedOpening)}>{conversation.status === "closed" ? "会话已结束" : "放入回复框"}</button>
       </div>
       {!!analysis.followUpQuestions?.length && <div className="ai-question"><span>可以轻轻追问</span><p>{analysis.followUpQuestions[0]}</p></div>}
       {!!analysis.avoidPhrases?.length && <p className="ai-avoid">尽量避免：{analysis.avoidPhrases.join("、")}</p>}
@@ -1007,10 +1018,10 @@ function AiAssistantPanel({ conversation, onUseSuggestion, onRetry, retrying = f
 }
 
 function AdminDashboard() {
+  const { session } = useAuth();
   const { conversations, loading, error } = useConversations();
   const [selectedId, setSelectedId] = useState(() => conversations[0]?.id ?? null);
   const [filter, setFilter] = useState("all");
-  const [draft, setDraft] = useState("");
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1024,6 +1035,8 @@ function AdminDashboard() {
     return true;
   });
   const selected = filteredConversations.find((conversation) => conversation.id === selectedId) ?? filteredConversations[0];
+  const [draft, setDraft] = useConversationDraft(session.id, "admin", selected?.id);
+  const scrolling = useConversationScroll(selected?.id, selected?.messages.length);
   const waitingCount = conversations.filter((conversation) => conversation.status === "waiting").length;
   const closedCount = conversations.filter((conversation) => conversation.status === "closed").length;
 
@@ -1041,9 +1054,6 @@ function AdminDashboard() {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
-  useEffect(() => {
-    adminMessageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [selected?.id, selected?.messages.length]);
 
   useEffect(() => setAiPanelOpen(false), [selected?.id]);
 
@@ -1051,13 +1061,14 @@ function AdminDashboard() {
 
   async function reply(event) {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected || busy || (!draft.trim() && !image)) return;
     setBusy(true);
     setActionError("");
     try {
       await sendMessage(selected.id, "admin", draft, image);
       setDraft("");
       setImage(null);
+      scrolling.jump();
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "回复发送失败，请稍后再试。");
     } finally {
@@ -1137,8 +1148,8 @@ function AdminDashboard() {
                 <span>{!selected.aiAssistanceEnabled ? "倾诉者未开启" : selected.aiAnalysis?.status === "pending" ? "正在分析最新消息…" : selected.aiAnalysis?.status === "failed" ? "分析暂时失败" : selected.aiAnalysis?.status === "ready" ? `可能感到：${selected.aiAnalysis.primaryEmotion} · ${selected.aiAnalysis.currentNeed}` : "等待倾诉消息"}</span>
                 <small>{aiPanelOpen ? "收起" : "查看建议"}</small>
               </button>
-              {aiPanelOpen && <div className="ai-inline-panel"><AiAssistantPanel conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} compact /></div>}
-              <div className="admin-messages">
+              {aiPanelOpen && <div className="ai-inline-panel"><AiAssistantPanel replyDisabled={busy} conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} compact /></div>}
+              <div className="admin-messages" ref={scrolling.ref} onScroll={scrolling.onScroll}>
                 {groupMessagesByDate(selected.messages).map((group) => (
                   <div className="message-day-group" key={group.key}>
                     <div className="chat-day">{formatConversationDate(group.date)}</div>
@@ -1153,14 +1164,15 @@ function AdminDashboard() {
                 ))}
                 <span ref={adminMessageEndRef} />
               </div>
+              {scrolling.unread && <button type="button" className="new-messages-button" onClick={scrolling.jump}>有新消息 · 回到最新位置 ↓</button>}
               {selected.status === "closed" ? (
                 <div className="conversation-closed-note compact"><CheckCircle size={22} weight="duotone" /><div><strong>这段会话已结束</strong><span>记录保留为只读，不能继续回复。</span></div></div>
               ) : (
                 <form className="admin-composer" onSubmit={reply}>
-                  <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => setImage(null)} />
-                  <textarea aria-label="回复内容" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleReplyKeyDown} rows="3" placeholder="先接住情绪，再慢慢回应…" />
+                  <ComposerImagePreview file={image} previewUrl={imagePreview} onClear={() => { if (!busy) setImage(null); }} />
+                  <textarea disabled={busy} aria-label="回复内容" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleReplyKeyDown} rows="3" placeholder="先接住情绪，再慢慢回应…" />
                   {actionError && <div className="form-message error"><WarningCircle size={18} /> {actionError}</div>}
-                  <div><span><ShieldCheck size={17} /> 不诊断、不评判 · 图片仅会话双方可见</span><span className="admin-composer-actions"><label className="button button-secondary compact-button image-action"><PlusCircle size={17} /> 添加图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectReplyImage} /></label><button className="button button-primary" disabled={busy || (!draft.trim() && !image)} type="submit">{busy ? "发送中…" : "发送回复"} <PaperPlaneTilt size={18} weight="fill" /></button></span></div>
+                  <div><span><ShieldCheck size={17} /> 不诊断、不评判 · 图片仅会话双方可见</span><span className="admin-composer-actions"><label className="button button-secondary compact-button image-action"><PlusCircle size={17} /> 添加图片<input disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectReplyImage} /></label><button className="button button-primary" disabled={busy || (!draft.trim() && !image)} type="submit">{busy ? "发送中…" : "发送回复"} <PaperPlaneTilt size={18} weight="fill" /></button></span></div>
                 </form>
               )}
             </>
@@ -1172,7 +1184,7 @@ function AdminDashboard() {
             <h3>{selected.alias}</h3>
             <p>系统不会向倾听员展示邮箱、真实姓名或登录方式。</p>
             <dl><div><dt>当前状态</dt><dd>{statusLabels[selected.status]}</dd></div><div><dt>倾诉主题</dt><dd>{selected.topic}</dd></div><div><dt>希望得到</dt><dd>{selected.need}</dd></div><div><dt>消息数量</dt><dd>{selected.messages.length} 条</dd></div></dl>
-            <AiAssistantPanel conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} />
+            <AiAssistantPanel replyDisabled={busy} conversation={selected} onUseSuggestion={useAiSuggestion} onRetry={retrySelectedAnalysis} retrying={retryingAnalysis} />
             <div className="admin-reminder"><Heart size={21} weight="fill" /><p>先回应感受，再询问事实。允许沉默，也允许用户暂停。</p></div>
           </aside>
         )}
