@@ -464,7 +464,14 @@ select:focus-visible {
   background: var(--paper);
 }
 
-.tip-card > span {
+.tip-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.tip-card-top > span {
   display: inline-block;
   padding: 6px 10px;
   border-radius: 999px;
@@ -474,14 +481,27 @@ select:focus-visible {
   font-weight: 700;
 }
 
-.tip-sage > span {
+.tip-card-top > svg {
+  color: var(--peach-dark);
+  opacity: 0.78;
+}
+
+.tip-sage .tip-card-top > span {
   color: #69704c;
   background: var(--sage-soft);
 }
 
-.tip-sand > span {
+.tip-sage .tip-card-top > svg {
+  color: var(--sage);
+}
+
+.tip-sand .tip-card-top > span {
   color: #806748;
   background: #f5e7ce;
+}
+
+.tip-sand .tip-card-top > svg {
+  color: #a98352;
 }
 
 .tip-card h2,
@@ -2798,8 +2818,10 @@ dd {
   box-shadow: 0 22px 54px rgba(102, 66, 45, 0.14);
 }
 
-.tip-card > span { transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
-.tip-card:hover > span { transform: translateY(-2px) scale(1.035); }
+.tip-card-top > span,
+.tip-card-top > svg { transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
+.tip-card:hover .tip-card-top > span { transform: translateY(-2px) scale(1.035); }
+.tip-card:hover .tip-card-top > svg { transform: translateY(-3px) rotate(-6deg) scale(1.08); }
 .tip-card a svg { transition: transform 350ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .tip-card a:hover svg { transform: translateX(5px); }
 
@@ -2902,6 +2924,275 @@ dd {
 @keyframes cloud-wait {
   0%, 100% { transform: translateY(0) rotate(-2deg); opacity: 0.72; }
   50% { transform: translateY(-5px) rotate(2deg); opacity: 1; }
+}
+
+/* Selected direction: 云端微光 — quiet watercolor depth with slow, accessible motion. */
+.page-home {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background: #fffaf0;
+}
+
+.page-home > .site-header,
+.page-home > main,
+.page-home > .site-footer {
+  position: relative;
+  z-index: 1;
+}
+
+.home-atmosphere {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 1020px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.home-atmosphere-layer {
+  position: absolute;
+  top: -18px;
+  left: -5%;
+  width: 110%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  opacity: 0.74;
+  will-change: transform, opacity;
+}
+
+.home-atmosphere-layer-back {
+  animation: cloud-atmosphere-drift 30s ease-in-out infinite alternate;
+}
+
+.home-atmosphere-layer-front {
+  top: 170px;
+  left: -9%;
+  width: 118%;
+  height: 830px;
+  object-position: center bottom;
+  opacity: 0.24;
+  animation: cloud-atmosphere-breathe 13s ease-in-out infinite alternate;
+}
+
+.home-light-mote {
+  position: absolute;
+  color: #efb657;
+  opacity: 0.54;
+  filter: drop-shadow(0 0 10px rgba(255, 220, 151, 0.72));
+  animation: light-mote-float 6.8s ease-in-out infinite alternate;
+}
+
+.home-light-mote-one {
+  top: 15%;
+  left: 53%;
+}
+
+.home-light-mote-two {
+  top: 29%;
+  right: 8%;
+  animation-delay: -2.3s;
+}
+
+.home-light-mote-three {
+  top: 57%;
+  left: 13%;
+  animation-delay: -4.1s;
+}
+
+.page-home .site-header {
+  width: min(1240px, calc(100% - 64px));
+}
+
+.page-home .hero {
+  width: min(1240px, calc(100% - 64px));
+  min-height: 618px;
+  grid-template-columns: minmax(570px, 1fr) minmax(0, 1fr);
+  overflow: visible;
+}
+
+.page-home .hero-copy {
+  padding-left: clamp(12px, 3.6vw, 54px);
+}
+
+.page-home .hero h1 {
+  font-size: clamp(54px, 4.6vw, 70px);
+  text-shadow: 0 2px 26px rgba(255, 253, 247, 0.84);
+}
+
+.page-home .hero-art img {
+  filter: drop-shadow(0 24px 34px rgba(123, 80, 52, 0.10));
+}
+
+.page-home .button-primary {
+  box-shadow: 0 13px 28px rgba(207, 103, 73, 0.24), 0 0 0 7px rgba(255, 239, 222, 0.32);
+}
+
+.page-home .button-secondary {
+  border-color: rgba(130, 91, 70, 0.48);
+  background: rgba(255, 253, 247, 0.72);
+  box-shadow: 0 10px 28px rgba(110, 74, 49, 0.07);
+  backdrop-filter: blur(12px);
+}
+
+.page-home .trust-strip {
+  width: min(1180px, calc(100% - 48px));
+  min-height: auto;
+  padding: 30px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  border: 1px solid rgba(226, 196, 174, 0.68);
+  border-radius: 30px;
+  background: rgba(255, 253, 247, 0.66);
+  box-shadow: 0 24px 64px rgba(116, 75, 49, 0.09);
+  backdrop-filter: blur(14px);
+}
+
+.page-home .comfort-copy {
+  grid-column: 1 / -1;
+  justify-content: center;
+  padding: 0 0 15px;
+  border: 0;
+  text-align: center;
+}
+
+.page-home .trust-item {
+  min-height: 108px;
+  padding: 19px;
+  border: 1px solid rgba(232, 209, 190, 0.78);
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow: 0 12px 30px rgba(111, 74, 49, 0.055);
+  backdrop-filter: blur(8px);
+}
+
+.page-home .tips-section {
+  position: relative;
+  padding-top: 104px;
+}
+
+.page-home .tip-card,
+.auth-card,
+.about-grid,
+.privacy-grid article {
+  background: rgba(255, 253, 247, 0.82);
+  box-shadow: 0 18px 48px rgba(116, 75, 49, 0.075);
+  backdrop-filter: blur(12px);
+}
+
+.page:not(.page-home) {
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+}
+
+.page:not(.page-home)::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: min(620px, 62vh);
+  background: url("/assets/cloud-glow-atmosphere.webp") center top / cover no-repeat;
+  opacity: 0.22;
+  pointer-events: none;
+  animation: cloud-atmosphere-breathe 18s ease-in-out infinite alternate;
+}
+
+.page:not(.page-home) > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes cloud-atmosphere-drift {
+  from { transform: translate3d(-1.8%, -0.8%, 0) scale(1.035); }
+  to { transform: translate3d(1.6%, 0.8%, 0) scale(1.075); }
+}
+
+@keyframes cloud-atmosphere-breathe {
+  from { transform: translate3d(-0.8%, 0, 0) scale(1.02); opacity: 0.2; }
+  to { transform: translate3d(0.8%, -1.1%, 0) scale(1.06); opacity: 0.29; }
+}
+
+@keyframes light-mote-float {
+  from { transform: translate3d(0, 7px, 0) rotate(-5deg) scale(0.9); opacity: 0.28; }
+  to { transform: translate3d(9px, -9px, 0) rotate(6deg) scale(1.08); opacity: 0.66; }
+}
+
+@media (max-width: 860px) {
+  .home-atmosphere {
+    height: 1160px;
+  }
+
+  .home-atmosphere-layer {
+    left: -28%;
+    width: 156%;
+    object-position: 61% top;
+  }
+
+  .home-atmosphere-layer-front {
+    top: 330px;
+    left: -34%;
+    width: 170%;
+  }
+
+  .page-home .site-header,
+  .page-home .hero {
+    width: min(100% - 32px, 720px);
+  }
+
+  .page-home .hero {
+    padding-top: 48px;
+    grid-template-columns: 1fr;
+  }
+
+  .page-home .trust-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .page-home .comfort-copy {
+    grid-column: auto;
+    border-bottom: 1px solid rgba(226, 196, 174, 0.68);
+  }
+
+  .page-home .trust-item {
+    min-height: 92px;
+  }
+}
+
+@media (max-width: 560px) {
+  .home-atmosphere {
+    height: 1100px;
+  }
+
+  .home-light-mote-one {
+    left: 78%;
+  }
+
+  .home-light-mote-two {
+    top: 40%;
+    right: 5%;
+  }
+
+  .home-light-mote-three {
+    top: 63%;
+    left: 7%;
+  }
+
+  .page-home .site-header,
+  .page-home .hero,
+  .page-home .trust-strip {
+    width: calc(100% - 24px);
+  }
+
+  .page-home .hero h1 {
+    font-size: 42px;
+  }
+
+  .page-home .trust-strip {
+    padding: 20px;
+    border-radius: 24px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

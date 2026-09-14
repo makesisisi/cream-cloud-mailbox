@@ -8,7 +8,7 @@ When implementing from a selected generated mock, treat that image as the source
 
 ## Durable product direction
 
-- Selected visual direction: the first Product Design mock, “奶油云朵信箱”.
+- Selected visual direction: the second Product Design mock, “云端微光”. Keep the live interface readable and functional while using a low-contrast watercolor cloud atmosphere, translucent paper surfaces, warm diffused light, and restrained drifting/breathing background motion.
 - Preserve the warm cream, muted peach, cocoa-brown, and small sage palette; hand-drawn watercolor/colored-pencil illustration style; rounded but adult-friendly UI; and generous whitespace.
 - Product language should feel gentle and unhurried without making medical claims or looking childish.
 - Motion should feel refined and calm: use unified easing, short layered entrances, restrained hover feedback, and viewer-relative chat motion; avoid abrupt jumps or playful excess, and always support reduced-motion preferences.

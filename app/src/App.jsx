@@ -83,6 +83,11 @@ const statusLabels = {
 
 const MAX_CHAT_IMAGE_SIZE = 4 * 1024 * 1024;
 
+function TipCardIcon({ color }) {
+  const Icon = color === "sage" ? Leaf : color === "sand" ? Cloud : Heart;
+  return <Icon size={23} weight="duotone" aria-hidden="true" />;
+}
+
 function validateChatImage(file) {
   if (!file) return "";
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return "只支持 JPG、PNG 或 WebP 图片。";
@@ -172,12 +177,36 @@ function SiteHeader() {
   );
 }
 
+function HomeAtmosphere() {
+  return (
+    <div className="home-atmosphere" aria-hidden="true">
+      <img
+        className="home-atmosphere-layer home-atmosphere-layer-back"
+        src="/assets/cloud-glow-atmosphere.webp"
+        alt=""
+        fetchPriority="high"
+        decoding="async"
+      />
+      <img
+        className="home-atmosphere-layer home-atmosphere-layer-front"
+        src="/assets/cloud-glow-atmosphere.webp"
+        alt=""
+        decoding="async"
+      />
+      <Sparkle className="home-light-mote home-light-mote-one" size={24} weight="fill" />
+      <Sparkle className="home-light-mote home-light-mote-two" size={16} weight="fill" />
+      <Sparkle className="home-light-mote home-light-mote-three" size={20} weight="fill" />
+    </div>
+  );
+}
+
 function HomePage() {
   const { session } = useAuth();
   const startPath = session ? (session.role === "admin" ? "/admin" : "/app") : "/register";
 
   return (
     <div className="page page-home">
+      <HomeAtmosphere />
       <SiteHeader />
       <main>
         <section className="hero" aria-labelledby="hero-title">
@@ -222,7 +251,7 @@ function HomePage() {
           <div className="tip-grid">
             {tips.map((tip) => (
               <article className={`tip-card tip-${tip.color}`} key={tip.title}>
-                <span>{tip.category}</span>
+                <div className="tip-card-top"><span>{tip.category}</span><TipCardIcon color={tip.color} /></div>
                 <h3>{tip.title}</h3>
                 <p>{tip.body}</p>
                 <Link to="/tips">慢慢读一读 <ArrowRight size={16} /></Link>
@@ -258,7 +287,7 @@ function TipsPage() {
             { category: "压力调节", title: "把担心写成一句话", body: "写下最担心的事，再写下今天能做的最小一步。", color: "sand" },
           ]).map((tip) => (
             <article className={`tip-card tip-${tip.color}`} key={tip.title}>
-              <span>{tip.category}</span><h2>{tip.title}</h2><p>{tip.body}</p>
+              <div className="tip-card-top"><span>{tip.category}</span><TipCardIcon color={tip.color} /></div><h2>{tip.title}</h2><p>{tip.body}</p>
             </article>
           ))}
         </div>
