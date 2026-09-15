@@ -2780,7 +2780,7 @@ dd {
 .hero-copy > :nth-child(5) { animation-delay: 200ms; }
 
 .hero-art img {
-  animation: hero-art-enter 680ms 70ms cubic-bezier(0.16, 1, 0.3, 1) both, hero-drift 7s 800ms ease-in-out infinite alternate;
+  animation: hero-art-enter 680ms 70ms cubic-bezier(0.16, 1, 0.3, 1) both, hero-drift 5.6s 800ms ease-in-out infinite alternate;
 }
 
 .button {
@@ -2886,8 +2886,8 @@ dd {
   to { opacity: 1; transform: translateY(24px) scale(1); }
 }
 @keyframes hero-drift {
-  from { transform: translateY(24px); }
-  to { transform: translateY(15px); }
+  from { transform: translateY(25px) rotate(-0.35deg); }
+  to { transform: translateY(6px) rotate(0.45deg); }
 }
 @keyframes menu-open {
   from { opacity: 0; transform: translateY(-8px) scale(0.94); }
@@ -2950,6 +2950,14 @@ dd {
   pointer-events: none;
 }
 
+.home-atmosphere-field {
+  position: absolute;
+  inset: -28px;
+  transform: translate3d(var(--atmosphere-x, 0), var(--atmosphere-y, 0), 0);
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
 .home-atmosphere-layer {
   position: absolute;
   top: -18px;
@@ -2963,7 +2971,7 @@ dd {
 }
 
 .home-atmosphere-layer-back {
-  animation: cloud-atmosphere-drift 30s ease-in-out infinite alternate;
+  animation: cloud-atmosphere-drift 18s -5s ease-in-out infinite alternate;
 }
 
 .home-atmosphere-layer-front {
@@ -2972,8 +2980,35 @@ dd {
   width: 118%;
   height: 830px;
   object-position: center bottom;
-  opacity: 0.24;
-  animation: cloud-atmosphere-breathe 13s ease-in-out infinite alternate;
+  opacity: 0.34;
+  animation: cloud-atmosphere-breathe 11s -3s ease-in-out infinite alternate;
+}
+
+.home-drift-cloud {
+  position: absolute;
+  color: rgba(144, 174, 166, 0.38);
+  filter: drop-shadow(0 12px 22px rgba(104, 132, 126, 0.10));
+  will-change: transform, opacity;
+}
+
+.home-drift-cloud-one {
+  top: 12%;
+  right: 11%;
+  animation: line-cloud-drift 9s -3s ease-in-out infinite alternate;
+}
+
+.home-drift-cloud-two {
+  top: 46%;
+  left: 6%;
+  color: rgba(221, 149, 119, 0.34);
+  animation: line-cloud-drift-reverse 11s -7s ease-in-out infinite alternate;
+}
+
+.home-drift-cloud-three {
+  top: 68%;
+  right: 18%;
+  color: rgba(186, 158, 118, 0.28);
+  animation: line-cloud-drift 13s -9s ease-in-out infinite alternate;
 }
 
 .home-light-mote {
@@ -2981,7 +3016,7 @@ dd {
   color: #efb657;
   opacity: 0.54;
   filter: drop-shadow(0 0 10px rgba(255, 220, 151, 0.72));
-  animation: light-mote-float 6.8s ease-in-out infinite alternate;
+  animation: light-mote-float 5.2s ease-in-out infinite alternate;
 }
 
 .home-light-mote-one {
@@ -3105,18 +3140,28 @@ dd {
 }
 
 @keyframes cloud-atmosphere-drift {
-  from { transform: translate3d(-1.8%, -0.8%, 0) scale(1.035); }
-  to { transform: translate3d(1.6%, 0.8%, 0) scale(1.075); }
+  from { transform: translate3d(-4.8%, -1.6%, 0) scale(1.04); opacity: 0.64; }
+  to { transform: translate3d(4.6%, 1.7%, 0) scale(1.11); opacity: 0.82; }
 }
 
 @keyframes cloud-atmosphere-breathe {
-  from { transform: translate3d(-0.8%, 0, 0) scale(1.02); opacity: 0.2; }
-  to { transform: translate3d(0.8%, -1.1%, 0) scale(1.06); opacity: 0.29; }
+  from { transform: translate3d(5.2%, 2.1%, 0) scale(1.03); opacity: 0.27; }
+  to { transform: translate3d(-5.2%, -2.3%, 0) scale(1.11); opacity: 0.43; }
 }
 
 @keyframes light-mote-float {
-  from { transform: translate3d(0, 7px, 0) rotate(-5deg) scale(0.9); opacity: 0.28; }
-  to { transform: translate3d(9px, -9px, 0) rotate(6deg) scale(1.08); opacity: 0.66; }
+  from { transform: translate3d(-9px, 12px, 0) rotate(-12deg) scale(0.78); opacity: 0.24; }
+  to { transform: translate3d(22px, -18px, 0) rotate(14deg) scale(1.22); opacity: 0.78; }
+}
+
+@keyframes line-cloud-drift {
+  from { transform: translate3d(-22px, 10px, 0) scale(0.92); opacity: 0.24; }
+  to { transform: translate3d(38px, -14px, 0) scale(1.08); opacity: 0.58; }
+}
+
+@keyframes line-cloud-drift-reverse {
+  from { transform: translate3d(30px, -8px, 0) scale(1.05); opacity: 0.22; }
+  to { transform: translate3d(-34px, 16px, 0) scale(0.92); opacity: 0.52; }
 }
 
 @media (max-width: 860px) {

@@ -11,7 +11,7 @@ When implementing from a selected generated mock, treat that image as the source
 - Selected visual direction: the second Product Design mock, “云端微光”. Keep the live interface readable and functional while using a low-contrast watercolor cloud atmosphere, translucent paper surfaces, warm diffused light, and restrained drifting/breathing background motion.
 - Preserve the warm cream, muted peach, cocoa-brown, and small sage palette; hand-drawn watercolor/colored-pencil illustration style; rounded but adult-friendly UI; and generous whitespace.
 - Product language should feel gentle and unhurried without making medical claims or looking childish.
-- Motion should feel refined and calm: use unified easing, short layered entrances, restrained hover feedback, and viewer-relative chat motion; avoid abrupt jumps or playful excess, and always support reduced-motion preferences.
+- Motion should feel refined and calm but visibly alive within 2–3 seconds: use perceptible front/back cloud speed differences, gentle pointer/scroll parallax, unified easing, short layered entrances, restrained hover feedback, and viewer-relative chat motion; avoid abrupt jumps or playful excess, and always support reduced-motion preferences.
 - Registered visitors are clients by default. They never choose the admin role themselves. Admin access is server-controlled.
 - In conversation views, administrators see only the generated anonymous alias, not the user's email or login identity.
 - AI-assisted emotion observation is optional per conversation and requires an explicit, unchecked-by-default client choice.

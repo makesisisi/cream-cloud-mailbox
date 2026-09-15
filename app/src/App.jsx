@@ -178,24 +178,67 @@ function SiteHeader() {
 }
 
 function HomeAtmosphere() {
+  const atmosphereRef = useRef(null);
+
+  useEffect(() => {
+    const atmosphere = atmosphereRef.current;
+    if (!atmosphere || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+
+    let frame = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    const paint = () => {
+      frame = 0;
+      const scrollOffset = Math.max(-46, window.scrollY * -0.055);
+      atmosphere.style.setProperty("--atmosphere-x", `${pointerX}px`);
+      atmosphere.style.setProperty("--atmosphere-y", `${pointerY + scrollOffset}px`);
+    };
+
+    const requestPaint = () => {
+      if (!frame) frame = window.requestAnimationFrame(paint);
+    };
+
+    const handlePointerMove = (event) => {
+      pointerX = ((event.clientX / window.innerWidth) - 0.5) * 26;
+      pointerY = ((event.clientY / window.innerHeight) - 0.5) * 14;
+      requestPaint();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("scroll", requestPaint, { passive: true });
+    requestPaint();
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("scroll", requestPaint);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
   return (
     <div className="home-atmosphere" aria-hidden="true">
-      <img
-        className="home-atmosphere-layer home-atmosphere-layer-back"
-        src="/assets/cloud-glow-atmosphere.webp"
-        alt=""
-        fetchPriority="high"
-        decoding="async"
-      />
-      <img
-        className="home-atmosphere-layer home-atmosphere-layer-front"
-        src="/assets/cloud-glow-atmosphere.webp"
-        alt=""
-        decoding="async"
-      />
-      <Sparkle className="home-light-mote home-light-mote-one" size={24} weight="fill" />
-      <Sparkle className="home-light-mote home-light-mote-two" size={16} weight="fill" />
-      <Sparkle className="home-light-mote home-light-mote-three" size={20} weight="fill" />
+      <div className="home-atmosphere-field" ref={atmosphereRef}>
+        <img
+          className="home-atmosphere-layer home-atmosphere-layer-back"
+          src="/assets/cloud-glow-atmosphere.webp"
+          alt=""
+          fetchPriority="high"
+          decoding="async"
+        />
+        <img
+          className="home-atmosphere-layer home-atmosphere-layer-front"
+          src="/assets/cloud-glow-atmosphere.webp"
+          alt=""
+          decoding="async"
+        />
+        <Cloud className="home-drift-cloud home-drift-cloud-one" size={92} weight="duotone" />
+        <Cloud className="home-drift-cloud home-drift-cloud-two" size={64} weight="duotone" />
+        <Cloud className="home-drift-cloud home-drift-cloud-three" size={76} weight="duotone" />
+        <Sparkle className="home-light-mote home-light-mote-one" size={24} weight="fill" />
+        <Sparkle className="home-light-mote home-light-mote-two" size={16} weight="fill" />
+        <Sparkle className="home-light-mote home-light-mote-three" size={20} weight="fill" />
+      </div>
     </div>
   );
 }
