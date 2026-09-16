@@ -51,7 +51,7 @@ export function requireAdmin(actor) {
 
 export async function loadMessages(conversationId) {
   const { rows: messages } = await db.pool.query(
-    "SELECT id, sender, body, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
+    "SELECT id, sender, body, reply_to_id, recalled_at, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
     [conversationId],
   );
   const { rows: attachments } = await db.pool.query(
@@ -78,14 +78,27 @@ export async function loadConversation(actor, id) {
   const conversation = await requireConversation(actor, id);
   const messages = await loadMessages(id);
   let aiAnalysis = null;
+  let adminState = null;
   if (actor.role === "admin") {
     try {
       aiAnalysis = await loadLatestAiAnalysis(id);
     } catch (error) {
       console.error("ai-analysis-load-error", { conversationId: id, code: error?.code });
     }
+    const { rows } = await db.pool.query(
+      "SELECT is_pinned, tags, last_read_at, crisis_status, crisis_steps FROM admin_conversation_states WHERE conversation_id = $1 AND admin_id = $2",
+      [id, actor.id],
+    );
+    const { rows: crisisHistory } = await db.pool.query(
+      "SELECT id, action_key, completed, created_at FROM conversation_crisis_actions WHERE conversation_id = $1 AND admin_id = $2 ORDER BY created_at DESC LIMIT 20",
+      [id, actor.id],
+    );
+    adminState = {
+      ...(rows[0] ?? { is_pinned: false, tags: [], last_read_at: null, crisis_status: "unreviewed", crisis_steps: {} }),
+      crisis_history: crisisHistory,
+    };
   }
-  return toConversation(conversation, messages, aiAnalysis);
+  return toConversation(conversation, messages, aiAnalysis, adminState);
 }
 
 export function json(data, init = {}) {

@@ -194,7 +194,13 @@ function toPublicAnalysis(row) {
 export async function loadLatestAiAnalysis(conversationId) {
   await ensureAiAnalysisSchema();
   const { rows } = await getDb().pool.query(
-    "SELECT * FROM conversation_ai_analyses WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1",
+    `SELECT analysis.*
+       FROM conversation_ai_analyses analysis
+       JOIN conversation_messages source_message ON source_message.id = analysis.source_message_id
+      WHERE analysis.conversation_id = $1
+        AND source_message.recalled_at IS NULL
+      ORDER BY analysis.created_at DESC
+      LIMIT 1`,
     [conversationId],
   );
   return toPublicAnalysis(rows[0]);
@@ -204,10 +210,12 @@ export async function loadLatestAiAnalyses(conversationIds) {
   if (!conversationIds.length) return new Map();
   await ensureAiAnalysisSchema();
   const { rows } = await getDb().pool.query(
-    `SELECT DISTINCT ON (conversation_id) *
-       FROM conversation_ai_analyses
-      WHERE conversation_id = ANY($1::uuid[])
-      ORDER BY conversation_id, created_at DESC`,
+    `SELECT DISTINCT ON (analysis.conversation_id) analysis.*
+       FROM conversation_ai_analyses analysis
+       JOIN conversation_messages source_message ON source_message.id = analysis.source_message_id
+      WHERE analysis.conversation_id = ANY($1::uuid[])
+        AND source_message.recalled_at IS NULL
+      ORDER BY analysis.conversation_id, analysis.created_at DESC`,
     [conversationIds],
   );
   return new Map(rows.map((row) => [row.conversation_id, toPublicAnalysis(row)]));
@@ -309,7 +317,7 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
       `SELECT m.body, m.sender, c.topic, c.need, c.ai_consent
          FROM conversation_messages m
          JOIN conversations c ON c.id = m.conversation_id
-        WHERE m.id = $1 AND m.conversation_id = $2`,
+        WHERE m.id = $1 AND m.conversation_id = $2 AND m.recalled_at IS NULL`,
       [sourceMessageId, conversationId],
     );
     const source = sourceRows[0];
@@ -318,7 +326,7 @@ export async function runAiAnalysis(conversationId, sourceMessageId) {
     const { rows: messages } = await getDb().pool.query(
       `SELECT sender, body, created_at
          FROM conversation_messages
-        WHERE conversation_id = $1
+        WHERE conversation_id = $1 AND recalled_at IS NULL
         ORDER BY created_at ASC, id ASC`,
       [conversationId],
     );

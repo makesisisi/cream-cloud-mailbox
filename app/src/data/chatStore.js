@@ -15,6 +15,14 @@ const seedConversations = [
     topic: "最近总觉得很累",
     need: "希望有人先听我说说",
     status: "waiting",
+    adminState: {
+      pinned: true,
+      tags: ["需要跟进"],
+      lastReadAt: "2026-08-27T10:18:00.000Z",
+      crisisStatus: "unreviewed",
+      crisisSteps: {},
+      crisisHistory: [],
+    },
     aiAssistanceEnabled: true,
     updatedAt: "2026-08-27T10:18:00.000Z",
     messages: [
@@ -60,12 +68,26 @@ let activeRequest = null;
 function readLocalConversations() {
   try {
     const stored = window.localStorage.getItem(CHAT_KEY);
-    if (stored) return JSON.parse(stored);
+    if (stored) return JSON.parse(stored).map(withLocalAdminState);
   } catch {
     // Fall back to seeded local data.
   }
   window.localStorage.setItem(CHAT_KEY, JSON.stringify(seedConversations));
-  return seedConversations;
+  return seedConversations.map(withLocalAdminState);
+}
+
+function withLocalAdminState(conversation) {
+  return {
+    ...conversation,
+    adminState: {
+      pinned: Boolean(conversation.adminState?.pinned),
+      tags: Array.isArray(conversation.adminState?.tags) ? conversation.adminState.tags : [],
+      lastReadAt: conversation.adminState?.lastReadAt ?? null,
+      crisisStatus: conversation.adminState?.crisisStatus ?? "unreviewed",
+      crisisSteps: conversation.adminState?.crisisSteps && typeof conversation.adminState.crisisSteps === "object" ? conversation.adminState.crisisSteps : {},
+      crisisHistory: Array.isArray(conversation.adminState?.crisisHistory) ? conversation.adminState.crisisHistory : [],
+    },
+  };
 }
 
 function writeLocalConversations(conversations) {
@@ -209,22 +231,28 @@ export async function createConversation(session, { topic, need, aiConsent = fal
   return conversation;
 }
 
-export async function sendMessage(conversationId, sender, body, image = null) {
+export async function sendMessage(conversationId, sender, body, image = null, options = {}) {
   const text = body.trim();
   if (!text && !image) return null;
   validateSelectedImage(image);
+  const clientMessageId = options.clientMessageId ?? crypto.randomUUID();
+  options.onProgress?.(image ? "正在准备图片…" : "正在发送…");
   if (authMode === "netlify") {
     let requestBody;
     if (image) {
       requestBody = new FormData();
       requestBody.append("body", text);
       requestBody.append("image", image);
+      requestBody.append("clientMessageId", clientMessageId);
+      if (options.replyToId) requestBody.append("replyToId", options.replyToId);
+      options.onProgress?.("正在安全上传图片…");
     } else {
-      requestBody = JSON.stringify({ body: text });
+      requestBody = JSON.stringify({ body: text, replyToId: options.replyToId, clientMessageId });
     }
     const { conversation } = await apiRequest(`/${conversationId}/messages`, { method: "POST", body: requestBody });
     apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
     notifyApiUpdated();
+    options.onProgress?.("");
     return conversation;
   }
 
@@ -238,20 +266,83 @@ export async function sendMessage(conversationId, sender, body, image = null) {
   } : null;
   const conversations = readLocalConversations().map((conversation) => {
     if (conversation.id !== conversationId) return conversation;
+    const existing = conversation.messages.find((message) => message.clientMessageId === clientMessageId && message.sender === sender);
+    if (existing) return conversation;
     const messageId = crypto.randomUUID();
+    const replySource = options.replyToId
+      ? conversation.messages.find((message) => message.id === options.replyToId && message.sender !== "system")
+      : null;
     return {
       ...conversation,
       status: sender === "admin" ? "active" : "waiting",
       updatedAt: now,
       messages: [
         ...conversation.messages,
-        { id: messageId, sender, body: text, attachments: attachment ? [attachment] : [], createdAt: now },
+        {
+          id: messageId,
+          clientMessageId,
+          sender,
+          body: text,
+          attachments: attachment ? [attachment] : [],
+          createdAt: now,
+          ...(replySource ? {
+            replyTo: {
+              id: replySource.id,
+              sender: replySource.sender,
+              body: replySource.recalledAt ? "原消息已撤回" : replySource.body,
+              hasImage: !replySource.recalledAt && Boolean(replySource.attachments?.length),
+              ...(replySource.recalledAt ? { recalledAt: replySource.recalledAt } : {}),
+            },
+          } : {}),
+        },
       ],
       ...(sender === "client" && conversation.aiAssistanceEnabled
         ? { aiAnalysis: createDemoAnalysis(text, messageId, now, Boolean(attachment)) }
         : {}),
     };
   });
+  writeLocalConversations(conversations);
+  options.onProgress?.("");
+  return conversations.find((conversation) => conversation.id === conversationId) ?? null;
+}
+
+export async function recallMessage(conversationId, messageId, sender) {
+  if (authMode === "netlify") {
+    const { conversation } = await apiRequest(`/${conversationId}/messages`, {
+      method: "DELETE",
+      body: JSON.stringify({ messageId }),
+    });
+    apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
+    notifyApiUpdated();
+    return conversation;
+  }
+
+  const now = Date.now();
+  let recalled = false;
+  const conversations = readLocalConversations().map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    const messages = conversation.messages.map((message) => {
+      const createdAt = Date.parse(message.createdAt);
+      const allowed = message.id === messageId
+        && message.sender === sender
+        && sender !== "system"
+        && !message.recalledAt
+        && Number.isFinite(createdAt)
+        && now - createdAt >= 0
+        && now - createdAt <= 2 * 60 * 1000;
+      if (!allowed) return message;
+      recalled = true;
+      return { ...message, body: "", attachments: [], recalledAt: new Date(now).toISOString() };
+    });
+    if (!recalled) return conversation;
+    return {
+      ...conversation,
+      messages,
+      updatedAt: new Date(now).toISOString(),
+      ...(conversation.aiAnalysis?.sourceMessageId === messageId ? { aiAnalysis: undefined } : {}),
+    };
+  });
+  if (!recalled) throw new Error("消息只能由发送者在两分钟内撤回。");
   writeLocalConversations(conversations);
   return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }
@@ -299,7 +390,7 @@ export async function retryAiAnalysis(conversationId) {
 
   const conversations = readLocalConversations();
   const conversation = conversations.find((item) => item.id === conversationId);
-  const lastClientMessage = conversation?.messages.filter((message) => message.sender === "client").at(-1);
+  const lastClientMessage = conversation?.messages.filter((message) => message.sender === "client" && !message.recalledAt).at(-1);
   if (!conversation?.aiAssistanceEnabled || !lastClientMessage) return null;
   const analysis = createDemoAnalysis(
     lastClientMessage.body,
@@ -346,6 +437,83 @@ export async function closeConversation(conversationId) {
       ? { ...conversation, status: "closed", updatedAt: new Date().toISOString() }
       : conversation,
   );
+  writeLocalConversations(conversations);
+  return conversations.find((conversation) => conversation.id === conversationId) ?? null;
+}
+
+export async function deleteConversation(conversationId, session) {
+  if (session?.role !== "client") throw new Error("只有倾诉者本人可以永久删除这段会话。");
+  if (authMode === "netlify") {
+    await apiRequest(`/${conversationId}`, { method: "DELETE" });
+    apiCache = apiCache.filter((item) => item.id !== conversationId);
+    apiLoaded = true;
+    notifyApiUpdated();
+    return true;
+  }
+
+  const conversations = readLocalConversations();
+  const conversation = conversations.find((item) => item.id === conversationId);
+  if (!conversation) throw new Error("没有找到这段会话。");
+  if (conversation.clientId && conversation.clientId !== session.id) {
+    throw new Error("你没有权限删除这段会话。");
+  }
+  writeLocalConversations(conversations.filter((item) => item.id !== conversationId));
+  return true;
+}
+
+export async function updateConversationAdminState(conversationId, patch) {
+  if (authMode === "netlify") {
+    const { conversation } = await apiRequest(`/${conversationId}/admin-state`, {
+      method: "POST",
+      body: JSON.stringify(patch),
+    });
+    apiCache = apiCache.map((item) => (item.id === conversation.id ? conversation : item));
+    notifyApiUpdated();
+    return conversation;
+  }
+
+  const conversations = readLocalConversations().map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    const current = conversation.adminState ?? { pinned: false, tags: [], lastReadAt: null };
+    const crisisSteps = { ...(current.crisisSteps ?? {}) };
+    const crisisHistory = [...(current.crisisHistory ?? [])];
+    let crisisStatus = current.crisisStatus ?? "unreviewed";
+    if (patch.crisisStep) {
+      crisisSteps[patch.crisisStep.key] = patch.crisisStep.completed;
+      crisisStatus = crisisSteps.schoolSupportContacted || crisisSteps.emergencyServicesContacted
+        ? "escalated"
+        : Object.values(crisisSteps).some(Boolean) ? "reviewing" : "unreviewed";
+      crisisHistory.unshift({
+        id: crypto.randomUUID(),
+        actionKey: patch.crisisStep.key,
+        completed: patch.crisisStep.completed,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (patch.crisisStatus === "resolved" || patch.crisisStatus === "reviewing") {
+      if (patch.crisisStatus === "resolved" && !(crisisSteps.humanReviewed && crisisSteps.safetyChecked && crisisSteps.schoolSupportContacted)) {
+        throw new Error("完成交接前，请先完成人工复核、安全确认和校内支持连接。");
+      }
+      crisisStatus = patch.crisisStatus;
+      crisisHistory.unshift({
+        id: crypto.randomUUID(),
+        actionKey: `status:${patch.crisisStatus}`,
+        completed: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return {
+      ...conversation,
+      adminState: {
+        pinned: typeof patch.pinned === "boolean" ? patch.pinned : current.pinned,
+        tags: Array.isArray(patch.tags) ? [...new Set(patch.tags)].slice(0, 4) : current.tags,
+        lastReadAt: patch.markRead === true ? new Date().toISOString() : current.lastReadAt,
+        crisisStatus,
+        crisisSteps,
+        crisisHistory: crisisHistory.slice(0, 20),
+      },
+    };
+  });
   writeLocalConversations(conversations);
   return conversations.find((conversation) => conversation.id === conversationId) ?? null;
 }

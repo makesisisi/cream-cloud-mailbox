@@ -34,7 +34,7 @@ async function listConversations(actor) {
 
   const ids = conversations.map((conversation) => conversation.id);
   const { rows: messages } = await db.pool.query(
-    "SELECT id, conversation_id, sender, body, created_at FROM conversation_messages WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at ASC, id ASC",
+    "SELECT id, conversation_id, sender, body, reply_to_id, recalled_at, created_at FROM conversation_messages WHERE conversation_id = ANY($1::uuid[]) ORDER BY created_at ASC, id ASC",
     [ids],
   );
   const { rows: attachments } = await db.pool.query(
@@ -49,15 +49,37 @@ async function listConversations(actor) {
     grouped.set(message.conversation_id, items);
   }
   let analyses = new Map();
+  let adminStates = new Map();
   if (actor.role === "admin") {
     try {
       analyses = await loadLatestAiAnalyses(ids);
     } catch (error) {
       console.error("ai-analysis-list-error", { code: error?.code });
     }
+    const { rows: states } = await db.pool.query(
+      "SELECT conversation_id, is_pinned, tags, last_read_at, crisis_status, crisis_steps FROM admin_conversation_states WHERE admin_id = $1 AND conversation_id = ANY($2::uuid[])",
+      [actor.id, ids],
+    );
+    const { rows: crisisActions } = await db.pool.query(
+      "SELECT id, conversation_id, action_key, completed, created_at FROM conversation_crisis_actions WHERE admin_id = $1 AND conversation_id = ANY($2::uuid[]) ORDER BY created_at DESC LIMIT 200",
+      [actor.id, ids],
+    );
+    const historyByConversation = new Map();
+    for (const action of crisisActions) {
+      const history = historyByConversation.get(action.conversation_id) ?? [];
+      if (history.length < 20) history.push(action);
+      historyByConversation.set(action.conversation_id, history);
+    }
+    for (const state of states) state.crisis_history = historyByConversation.get(state.conversation_id) ?? [];
+    adminStates = new Map(states.map((state) => [state.conversation_id, state]));
   }
   return conversations.map((conversation) =>
-    toConversation(conversation, grouped.get(conversation.id) ?? [], analyses.get(conversation.id) ?? null),
+    toConversation(
+      conversation,
+      grouped.get(conversation.id) ?? [],
+      analyses.get(conversation.id) ?? null,
+      actor.role === "admin" ? adminStates.get(conversation.id) ?? { is_pinned: false, tags: [], last_read_at: null, crisis_status: "unreviewed", crisis_steps: {}, crisis_history: [] } : null,
+    ),
   );
 }
 
