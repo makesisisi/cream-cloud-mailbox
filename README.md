@@ -2,7 +2,7 @@
 
 一个面向匿名倾诉与人工回复的网站。倾诉者以随机代号与倾听员交流，可以自行决定是否启用 AI 辅助、随时撤回授权，并管理自己的会话数据。网站采用「云层传送门」视觉风格，支持桌面和手机使用。
 
-**在线体验：** [yunxinxiang.netlify.app](https://yunxinxiang.netlify.app) · **问题反馈：** [GitHub Issues](https://github.com/makesisisi/cream-cloud-mailbox/issues)
+**在线体验：** [naiyun.netlify.app](https://naiyun.netlify.app) · **问题反馈：** [GitHub Issues](https://github.com/makesisisi/cream-cloud-mailbox/issues)
 
 ![小熊把信放进云朵信箱的插画](app/public/assets/cloud-mailbox-hero-v2.webp)
 
